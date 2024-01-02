@@ -408,7 +408,17 @@ class STCrossTransformer(nn.Module):
                  composition=False,
                  fusion_method=None,
                  pretrained_cfg = None,
-                 pretrained_cfg_overlay = None):
+                 pretrained_cfg_overlay = None,
+                 nounlist = None,
+                 noundict = None,
+                 nountoken = None,
+                 verblist = None,
+                 verbdict = None,
+                 verbtoken = None,
+                 device = None,
+                 clip_model = 'ViT-B/16',
+                 prefix = None,
+                 postfix = None):
         super().__init__()
         self.num_classes = num_classes
         self.num_frames = all_frames
@@ -416,6 +426,25 @@ class STCrossTransformer(nn.Module):
         self.tubelet_size = tubelet_size
         self.down_ratio = down_ratio
         self.composition = composition
+        # ==============================================================================================================
+        self.prefix = prefix
+        self.postfix = postfix
+        self.nounlist = nounlist
+        self.noundict = noundict
+        self.nountoken = nountoken
+        self.verblist = verblist
+        self.verbdict = verbdict
+        self.verbtoken = verbtoken
+        
+        
+        self.device = device
+        self.clipmodel, _ = clip.load(clip_model, device=self.device, jit=False, return_intermediate_text_feature=0) 
+        self.embedding = torch.nn.Embedding(77, self.hidden_size)
+        
+        for paramclip in self.clipmodel.parameters():
+            paramclip.requires_grad = False
+        # ==============================================================================================================
+        
         self.patch_embed = PatchEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim, num_frames=all_frames, tubelet_size=self.tubelet_size)
         num_patches = self.patch_embed.num_patches
@@ -463,6 +492,7 @@ class STCrossTransformer(nn.Module):
         self.apply(self._init_weights)
         self._init_adpater_weight()
         
+        nn.init.normal_(self.embedding.weight, std=0.01)
         if self.composition:
             self.head_verb.weight.data.mul_(init_scale)
             self.head_verb.bias.data.mul_(init_scale)
@@ -497,6 +527,23 @@ class STCrossTransformer(nn.Module):
                         nn.init.constant_(m2.weight, 0)
                         nn.init.constant_(m2.bias, 0)
         
+    def replace_text_embedding(self, actionlist, actiondict, actiontoken):
+        text_embedding = self.embedding(torch.arange(77))[None, :].repeat([len(actionlist), 1, 1])
+        text_token = torch.zeros(len(actionlist), 77)  
+
+        for i, a in enumerate(actionlist):
+            embedding = torch.from_numpy(actiondict[a][0]).float()
+            token = torch.from_numpy(actiontoken[a][0])
+            text_embedding[i][0] = embedding[0]
+            ind = np.argmax(token, -1)
+
+            text_embedding[i][self.prefix + 1: self.prefix + ind] = embedding[1:ind]
+            text_embedding[i][self.prefix + ind + self.postfix] = embedding[ind]
+
+            text_token[i][0] = token[0]
+            text_token[i][self.prefix + 1: self.prefix + ind] = token[1:ind]
+            text_token[i][self.prefix + ind + self.postfix] = token[ind]
+        return text_embedding, text_token
 
     def get_num_layers(self):
         return len(self.blocks)
@@ -548,14 +595,15 @@ class STCrossTransformer(nn.Module):
         
         return s_x, t_x
 
-    def forward(self, x):
+    def forward(self, x, inp_nounlist, inp_verblist):
+        noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
+        verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken)
+        nounFeature = self.clipmodel.encode_text(noun_embedding, prompt_nountoken)
+        verbFeature = self.clipmodel.encode_text(verb_embedding, prompt_verbtoken)
+        
         if self.composition:
             s_x, t_x = self.forward_features(x)
-            s_x = self.head_noun_dropout(s_x)
-            s_x = self.head_noun(s_x)
-            t_x = self.head_verb_dropout(t_x)
-            t_x = self.head_verb(t_x)
-            return s_x, t_x
+            return s_x, t_x, nounFeature, verbFeature
         else:
             s_x, t_x = self.forward_features(x)
             x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
@@ -563,89 +611,6 @@ class STCrossTransformer(nn.Module):
             x = self.head(x)
             return x
 
-class CLIPrompt(torch.nn.Module):
-    def __init__(self, args, actionlist, actiondict, actiontoken, device):
-        super(CLIPrompt, self).__init__()
-
-        self.device = device
-        self.clipmodel, _ = clip.load(args.backbone, device=self.device, jit=False, return_intermediate_text_feature=args.return_intermediate_text_feature) 
-
-        for paramclip in self.clipmodel.parameters():
-            paramclip.requires_grad = False
-
-        self.dropout = 0.0 # if args.tfm_layers > 2 else 0.0
-        self.hidden_size = 512
-        self.numF = args.numFrames
-        self.temporal = args.temporal
-        self.has_feature_input = 'feature' in args.dataset
-
-        self.prefix = args.prefix
-        self.postfix = args.postfix
-        self.actionlist = actionlist
-        self.actiondict = actiondict
-        self.actiontoken = actiontoken
-        self.tfm_layers = args.tfm_layers
-        self.tfm_heads = args.tfm_heads
-
-        self.embedding = torch.nn.Embedding(77, self.hidden_size)
-        self.temporalEmbedding = torch.nn.Embedding(self.numF, self.hidden_size)
-
-        if self.temporal == 1:
-            self.temporalModelling = TemporalModelling(width=self.hidden_size, layers=self.tfm_layers, heads=self.tfm_heads, dropout=self.dropout)
-
-        self.initialize_parameters()
-
-
-    def initialize_parameters(self):
-        nn.init.normal_(self.embedding.weight, std=0.01)
-        nn.init.normal_(self.temporalEmbedding.weight, std=0.01)
-
-
-    def replace_text_embedding(self, actionlist):
-        self.text_embedding = self.embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
-        self.prompt_actiontoken = torch.zeros(len(actionlist), 77)  
-
-        for i, a in enumerate(actionlist):
-            embedding = torch.from_numpy(self.actiondict[a][0]).float().to(self.device)
-            token = torch.from_numpy(self.actiontoken[a][0])
-            self.text_embedding[i][0] = embedding[0]
-            ind = np.argmax(token, -1)
-
-            self.text_embedding[i][self.prefix + 1: self.prefix + ind] = embedding[1:ind]
-            self.text_embedding[i][self.prefix + ind + self.postfix] = embedding[ind]
-
-            self.prompt_actiontoken[i][0] = token[0]
-            self.prompt_actiontoken[i][self.prefix + 1: self.prefix + ind] = token[1:ind]
-            self.prompt_actiontoken[i][self.prefix + ind + self.postfix] = token[ind]
-
-        self.text_embedding.to(self.device)
-        self.prompt_actiontoken.to(self.device)
-
-
-    def forward(self, vids, inp_actionlist):
-        # replace_text_embedding at every iter
-        # otherwise RuntimeError: backward through the graph a second time
-        self.replace_text_embedding(inp_actionlist)
-
-        # encode text
-        tFeature = self.clipmodel.encode_text(self.text_embedding, self.prompt_actiontoken)
-
-        # encode videos
-        if self.has_feature_input:
-            vFeature = einops.rearrange(vids.float(), 'b t c -> t b c', t=self.numF)
-        else:
-            iFeature = self.clipmodel.encode_image(einops.rearrange(vids, 'b t c h w -> (b t) c h w'))
-            vFeature = einops.rearrange(iFeature, '(b t) c -> t b c', t=self.numF)
-
-        if self.temporal == 1:  # temporal modelling
-            tempEmbedding = einops.repeat(self.temporalEmbedding(torch.arange(self.numF).to(self.device)), 't c -> t b c', b=vFeature.size(1))
-            vFeature = vFeature + tempEmbedding.to(self.device)
-            vFeature = self.temporalModelling(vFeature)  
-            vFeature = vFeature.mean(dim=0)
-        else:
-            vFeature = vFeature.type(torch.float32).mean(dim=0)
-
-        return vFeature, tFeature
 
 @register_model
 def prompt_cast_base_patch16_224(pretrained=False, **kwargs):

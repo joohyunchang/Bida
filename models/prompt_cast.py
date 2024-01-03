@@ -9,7 +9,7 @@ from timm.models.registry import register_model
 from collections import OrderedDict
 from einops import rearrange
 import random
-import clip
+from models import clip
 
 
 def _cfg(url='', **kwargs):
@@ -428,6 +428,7 @@ class STCrossTransformer(nn.Module):
         self.down_ratio = down_ratio
         self.composition = composition
         # ==============================================================================================================
+        self.text_dim = text_dim
         self.prefix = prefix
         self.postfix = postfix
         self.nounlist = nounlist
@@ -440,7 +441,7 @@ class STCrossTransformer(nn.Module):
         
         self.device = device
         self.clipmodel, _ = clip.load(clip_model, device=self.device, jit=False, return_intermediate_text_feature=0) 
-        self.embedding = torch.nn.Embedding(77, self.hidden_size)
+        self.embedding = torch.nn.Embedding(77, self.text_dim)
         
         for paramclip in self.clipmodel.parameters():
             paramclip.requires_grad = False
@@ -530,11 +531,11 @@ class STCrossTransformer(nn.Module):
                         nn.init.constant_(m2.bias, 0)
         
     def replace_text_embedding(self, actionlist, actiondict, actiontoken):
-        text_embedding = self.embedding(torch.arange(77))[None, :].repeat([len(actionlist), 1, 1])
+        text_embedding = self.embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
         prompt_texttoken = torch.zeros(len(actionlist), 77)  
 
         for i, a in enumerate(actionlist):
-            embedding = torch.from_numpy(actiondict[a][0]).float()
+            embedding = torch.from_numpy(actiondict[a][0]).float().to(self.device)
             token = torch.from_numpy(actiontoken[a][0])
             text_embedding[i][0] = embedding[0]
             ind = np.argmax(token, -1)
@@ -619,19 +620,21 @@ class STCrossTransformer(nn.Module):
 
 
 @register_model
-def prompt_cast_base_patch16_224(pretrained=False, args, **kwargs):
+def prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    nounlist, noundict, nountoken, verblist, verbdict, verbtoken = class_list
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, 
-        nounlist = None, noundict = None, nountoken = None, verblist = None, verbdict = None, verbtoken = None,
-        device = args.device, clip_model = args.clip_model, prefix = 16, postfix = 16, **kwargs)
+        nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
+        device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, **kwargs)
     return model
 
 @register_model
-def compo_prompt_cast_base_patch16_224(pretrained=False, args, **kwargs):
+def compo_prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    nounlist, noundict, nountoken, verblist, verbdict, verbtoken = class_list
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
-        nounlist = None, noundict = None, nountoken = None, verblist = None, verbdict = None, verbtoken = None,
-        device = args.device, clip_model = args.clip_model, prefix = 16, postfix = 16, **kwargs)
+        nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
+        device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, **kwargs)
     return model

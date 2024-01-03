@@ -1,4 +1,4 @@
-import clip
+from models import clip
 import torch
 import pandas as pd
 import numpy as np
@@ -14,7 +14,7 @@ def convert_to_token(xh):
 
 def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', device='cpu'):
     actionlist, actionprompt, actiontoken = [], {}, []
-    numC = {'HMDB51-feature-30fps-center': 51,'ek100': [300,97]}
+    numC = {'HMDB51-feature-30fps-center': 51,}
 
     # load the CLIP model
     clipmodel, _ = clip.load(clipbackbone, device=device, jit=False)
@@ -30,7 +30,7 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         actiontoken = np.array([convert_to_token(a) for a in actionlist])
     # More datasets to be continued
 
-    elif dataset == 'ek100':
+    elif dataset == 'EPIC':
         noun_anno_path = os.path.join(data_path, 'epic100_noun_classes.csv')
         verb_anno_path = os.path.join(data_path, 'epic100_verb_classes.csv')
         noun_cleaned = pd.read_csv(noun_anno_path, header=None, delimiter=',')
@@ -50,7 +50,7 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         nountoken = OrderedDict((nounlist[i], nountoken[i]) for i in range(300))
         verbtoken = OrderedDict((verblist[i], verbtoken[i]) for i in range(97))
 
-        return nounlist, noundict, nountoken, verblist, verbdict, verbtoken
+        return [nounlist, noundict, nountoken, verblist, verbdict, verbtoken]
     
     # query the vector from dictionary
     with torch.no_grad():

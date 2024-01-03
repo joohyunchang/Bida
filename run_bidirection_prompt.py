@@ -26,7 +26,9 @@ import models.bidir_modeling_after_crossattn
 import models.bidir_modeling_crossattn
 import models.bidir_aim_modeling_crossattn
 import models.bidir_modeling_crossattn_concat
+import models.prompt_cast
 import models.AIM
+from models.prompt import text_prompt
 
 
 
@@ -193,6 +195,7 @@ def get_args():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--local_rank', type=int)
+    parser.add_argument('--local-rank', type=int)
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
@@ -327,6 +330,8 @@ def main(args, ds_init):
     args.window_size = 16
     args.patch_size = patch_size
     
+    if args.composition:
+        class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=args.device)
     
     model = create_model(
           args.vmae_model,
@@ -341,6 +346,8 @@ def main(args, ds_init):
           use_mean_pooling=args.use_mean_pooling,
           init_scale=args.init_scale,
           fusion_method=args.fusion_method,
+          class_list = class_list,
+          args = args,
         #   head_drop_rate=args.head_drop
       )
     
@@ -434,9 +441,9 @@ def main(args, ds_init):
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
     print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
-    if mixup_fn is not None:
+    if mixup_fn is not None:  # 이부분도 수정했음
         # smoothing is handled with mixup label transform
-        criterion = SoftTargetCrossEntropy()
+        criterion = torch.nn.CrossEntropyLoss()  # SoftTargetCrossEntropy()
     elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
@@ -498,7 +505,7 @@ def main(args, ds_init):
             device, epoch, loss_scaler, args.clip_grad, model_ema, mixup_fn,
             log_writer=log_writer, start_steps=epoch * num_training_steps_per_epoch,
             lr_schedule_values=lr_schedule_values, wd_schedule_values=wd_schedule_values,
-            num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq,
+            num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq, class_list=class_list
         )
         torch.cuda.empty_cache()
         if args.output_dir and args.save_ckpt:
@@ -507,7 +514,7 @@ def main(args, ds_init):
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                     loss_scaler=loss_scaler, epoch=epoch, model_ema=model_ema)
         if data_loader_val is not None:
-            test_stats = validation_one_epoch(args, data_loader_val, model, device)
+            test_stats = validation_one_epoch(args, data_loader_val, model, device, class_list=class_list)
             torch.cuda.empty_cache()
             
             if args.composition:

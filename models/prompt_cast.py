@@ -387,7 +387,8 @@ class STCrossTransformer(nn.Module):
                  patch_size=16, 
                  in_chans=3, 
                  num_classes=1000, 
-                 embed_dim=768, 
+                 embed_dim=768,
+                 text_dim=512, 
                  depth=12,
                  num_heads=12, 
                  mlp_ratio=4.,
@@ -475,10 +476,11 @@ class STCrossTransformer(nn.Module):
         self.clip_ln_post = LayerNorm(embed_dim)
         self.vmae_fc_norm = norm_layer(embed_dim)
         
+        # 768 to 512
         if self.composition:
-            self.head_verb = nn.Linear(embed_dim, 97)
+            self.head_verb = nn.Linear(embed_dim, text_dim)
             self.head_verb_dropout = nn.Dropout(head_drop_rate)
-            self.head_noun = nn.Linear(embed_dim, 300)
+            self.head_noun = nn.Linear(embed_dim, text_dim)
             self.head_noun_dropout = nn.Dropout(head_drop_rate)
         else:
             self.noun_last_Adapter = Adapter(embed_dim, skip_connect=False)
@@ -529,7 +531,7 @@ class STCrossTransformer(nn.Module):
         
     def replace_text_embedding(self, actionlist, actiondict, actiontoken):
         text_embedding = self.embedding(torch.arange(77))[None, :].repeat([len(actionlist), 1, 1])
-        text_token = torch.zeros(len(actionlist), 77)  
+        prompt_texttoken = torch.zeros(len(actionlist), 77)  
 
         for i, a in enumerate(actionlist):
             embedding = torch.from_numpy(actiondict[a][0]).float()
@@ -540,10 +542,10 @@ class STCrossTransformer(nn.Module):
             text_embedding[i][self.prefix + 1: self.prefix + ind] = embedding[1:ind]
             text_embedding[i][self.prefix + ind + self.postfix] = embedding[ind]
 
-            text_token[i][0] = token[0]
-            text_token[i][self.prefix + 1: self.prefix + ind] = token[1:ind]
-            text_token[i][self.prefix + ind + self.postfix] = token[ind]
-        return text_embedding, text_token
+            prompt_texttoken[i][0] = token[0]
+            prompt_texttoken[i][self.prefix + 1: self.prefix + ind] = token[1:ind]
+            prompt_texttoken[i][self.prefix + ind + self.postfix] = token[ind]
+        return text_embedding, prompt_texttoken
 
     def get_num_layers(self):
         return len(self.blocks)
@@ -603,6 +605,10 @@ class STCrossTransformer(nn.Module):
         
         if self.composition:
             s_x, t_x = self.forward_features(x)
+            s_x = self.head_noun_dropout(s_x)
+            s_x = self.head_noun(s_x)
+            t_x = self.head_verb_dropout(t_x)
+            t_x = self.head_verb(t_x)
             return s_x, t_x, nounFeature, verbFeature
         else:
             s_x, t_x = self.forward_features(x)
@@ -613,15 +619,19 @@ class STCrossTransformer(nn.Module):
 
 
 @register_model
-def prompt_cast_base_patch16_224(pretrained=False, **kwargs):
+def prompt_cast_base_patch16_224(pretrained=False, args, **kwargs):
     model = STCrossTransformer(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, **kwargs)
+        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, 
+        nounlist = None, noundict = None, nountoken = None, verblist = None, verbdict = None, verbtoken = None,
+        device = args.device, clip_model = args.clip_model, prefix = 16, postfix = 16, **kwargs)
     return model
 
 @register_model
-def compo_prompt_cast_base_patch16_224(pretrained=False, **kwargs):
+def compo_prompt_cast_base_patch16_224(pretrained=False, args, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
+        nounlist = None, noundict = None, nountoken = None, verblist = None, verbdict = None, verbtoken = None,
+        device = args.device, clip_model = args.clip_model, prefix = 16, postfix = 16, **kwargs)
     return model

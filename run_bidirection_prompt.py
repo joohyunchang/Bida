@@ -449,7 +449,7 @@ def main(args, ds_init):
         optimizer=optimizer, loss_scaler=loss_scaler, model_ema=model_ema)
     
     if args.composition:
-        from engine_for_compomodel import train_one_epoch, validation_one_epoch, final_test, merge
+        from engine_for_prompt import train_one_epoch, validation_one_epoch, final_test, merge
     else:
         from engine_for_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
     

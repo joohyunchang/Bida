@@ -189,27 +189,45 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
     
     # prompt setting
     nounlist, noundict, nountoken, verblist, verbdict, verbtoken = class_list
+    featnorm = 1
 
     # switch to evaluation mode
     model.eval()
-
-    for batch in metric_logger.log_every(data_loader, 10, header):
+    for idx, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
         samples = batch[0]
         target = batch[1]
         batch_size = samples.shape[0]
         samples = samples.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
         action_target = (target[:,1] * 1000) + target[:,0]
+        # target_noun, target_verb = targets[:,0], targets[:,1]
+        # target_noun = [nounlist[i] for i in target_noun]
+        # target_verb = [verblist[i] for i in target_verb]  
 
         # compute output
         with torch.cuda.amp.autocast():
-            output_noun, output_verb = model(samples)
-            loss_noun = criterion(output_noun, target[:,0])
-            loss_verb = criterion(output_verb, target[:,1])
+            if idx == 0:
+                outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
+            else:
+                outputs_noun, outputs_verb, _, _ = model(samples, nounlist[:1], verblist[:1])
+                
+            if featnorm:
+                outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
+                outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
+                nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
+                verbFeature = verbFeature / verbFeature.norm(dim=-1, keepdim=True)
+                noun_logits = outputs_noun @ nounFeature.t() / 0.07
+                verb_logits = outputs_verb @ verbFeature.t() / 0.07
+            else:
+                noun_logits = outputs_noun @ nounFeature.t()
+                verb_logits = outputs_verb @ verbFeature.t()
+                
+            loss_noun = criterion(noun_logits, target[:,0])
+            loss_verb = criterion(verb_logits, target[:,1])
             
-        acc1_action, acc5_action = action_accuracy(output_noun, output_verb, action_target, topk=(1,5))
-        acc1_noun, acc5_noun = accuracy(output_noun, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(output_verb, target[:,1], topk=(1, 5))
+        acc1_action, acc5_action = action_accuracy(outputs_noun, outputs_verb, action_target, topk=(1,5))
+        acc1_noun, acc5_noun = accuracy(outputs_noun, target[:,0], topk=(1, 5))
+        acc1_verb, acc5_verb = accuracy(outputs_verb, target[:,1], topk=(1, 5))
         
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())
@@ -240,12 +258,13 @@ def final_test(args, data_loader, model, device, file, class_list):
     
     # prompt setting
     nounlist, noundict, nountoken, verblist, verbdict, verbtoken = class_list
+    featnorm = 1
 
     # switch to evaluation mode
     model.eval()
     final_result = []
     
-    for batch in metric_logger.log_every(data_loader, 10, header):
+    for idx, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
         samples = batch[0]
         target = batch[1]
         ids = batch[2]
@@ -255,17 +274,31 @@ def final_test(args, data_loader, model, device, file, class_list):
         samples = samples.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
         action_target = (target[:,1] * 1000) + target[:,0]
-
         # compute output
         with torch.cuda.amp.autocast():
-            output_noun, output_verb = model(samples)
-            loss_noun = criterion(output_noun, target[:,0])
-            loss_verb = criterion(output_verb, target[:,1])
+            if idx == 0:
+                outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
+            else:
+                outputs_noun, outputs_verb, _, _ = model(samples, nounlist[:1], verblist[:1])
+                
+            if featnorm:
+                outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
+                outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
+                nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
+                verbFeature = verbFeature / verbFeature.norm(dim=-1, keepdim=True)
+                noun_logits = outputs_noun @ nounFeature.t() / 0.07
+                verb_logits = outputs_verb @ verbFeature.t() / 0.07
+            else:
+                noun_logits = outputs_noun @ nounFeature.t()
+                verb_logits = outputs_verb @ verbFeature.t()
+                
+            loss_noun = criterion(noun_logits, target[:,0])
+            loss_verb = criterion(verb_logits, target[:,1])
 
-        for i in range(output_noun.size(0)):
+        for i in range(outputs_noun.size(0)):
             string = "{} {} {} {} {} {} {} {}\n".format(ids[i], \
-                                                str(output_noun.data[i].cpu().numpy().tolist()), \
-                                                str(output_verb.data[i].cpu().numpy().tolist()), \
+                                                str(outputs_noun.data[i].cpu().numpy().tolist()), \
+                                                str(outputs_verb.data[i].cpu().numpy().tolist()), \
                                                 str(int(action_target[i].cpu().numpy())), \
                                                 str(int(target[i,0].cpu().numpy())), \
                                                 str(int(target[i,1].cpu().numpy())), \
@@ -273,9 +306,9 @@ def final_test(args, data_loader, model, device, file, class_list):
                                                 str(int(split_nb[i].cpu().numpy())))
             final_result.append(string)
 
-        acc1_action, acc5_action = action_accuracy(output_noun, output_verb, action_target, topk=(1,5))
-        acc1_noun, acc5_noun = accuracy(output_noun, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(output_verb, target[:,1], topk=(1, 5))
+        acc1_action, acc5_action = action_accuracy(outputs_noun, outputs_verb, action_target, topk=(1,5))
+        acc1_noun, acc5_noun = accuracy(outputs_noun, target[:,0], topk=(1, 5))
+        acc1_verb, acc5_verb = accuracy(outputs_verb, target[:,1], topk=(1, 5))
 
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())

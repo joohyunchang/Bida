@@ -8,7 +8,7 @@ from util_tools.mixup import Mixup
 from timm.utils import accuracy, ModelEma
 import util_tools.utils as utils
 from scipy.special import softmax
-from einops import rearrange
+from einops import rearrange, repeat
 import random
 
 
@@ -18,18 +18,22 @@ def composition_train_class_batch(model, samples, target_noun, target_verb, crit
     featnorm = 1
     
     # sample positive and negative
-    noun_uniqname = np.unique(target_noun)
-    verb_uniqname = np.unique(target_verb)
-    noun_numNeg = numContrast - len(noun_uniqname)
-    verb_numNeg = numContrast - len(verb_uniqname)
-    noun_complement = list(set(nounlist) - set(noun_uniqname))
-    verb_complement = list(set(verblist) - set(verb_uniqname))
-    inp_nounlist = noun_uniqname.tolist() + random.sample(noun_complement, min(noun_numNeg, len(noun_complement)))
-    inp_verblist = verb_uniqname.tolist() + random.sample(verb_complement, min(verb_numNeg, len(verb_complement)))
-    noun_targets = torch.tensor([inp_nounlist.index(n) for n in target_noun]).to(device)
-    verb_targets = torch.tensor([inp_verblist.index(v) for v in target_verb]).to(device)
+    # target_noun = [nounlist[i] for i in target_noun]
+    # target_verb = [verblist[i] for i in target_verb]
+    # noun_uniqname = np.unique(target_noun)
+    # verb_uniqname = np.unique(target_verb)
+    # noun_numNeg = numContrast - len(noun_uniqname)
+    # verb_numNeg = numContrast - len(verb_uniqname)
+    # noun_complement = list(set(nounlist) - set(noun_uniqname))
+    # verb_complement = list(set(verblist) - set(verb_uniqname))
+    # inp_nounlist = noun_uniqname.tolist() + random.sample(noun_complement, min(noun_numNeg, len(noun_complement)))
+    # inp_verblist = verb_uniqname.tolist() + random.sample(verb_complement, min(verb_numNeg, len(verb_complement)))
+    # noun_targets = torch.tensor([inp_nounlist.index(n) for n in target_noun]).to(device)
+    # verb_targets = torch.tensor([inp_verblist.index(v) for v in target_verb]).to(device)
     
-    outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, inp_nounlist, inp_verblist)
+    # outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, inp_nounlist, inp_verblist)
+    noun_targets, verb_targets = target_noun, target_verb
+    outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
     if featnorm:
         outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
         outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
@@ -44,7 +48,7 @@ def composition_train_class_batch(model, samples, target_noun, target_verb, crit
     loss_noun = criterion(noun_logits, noun_targets)
     loss_verb = criterion(verb_logits, verb_targets)
     total_loss = loss_noun + loss_verb
-    return total_loss, loss_noun, loss_verb, outputs_noun, outputs_verb
+    return total_loss, loss_noun, loss_verb, outputs_noun, outputs_verb, [noun_logits, verb_logits]
 
 
 
@@ -91,14 +95,12 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         targets = targets.to(device, non_blocking=True)
 
         target_noun, target_verb = targets[:,0], targets[:,1]
-        target_noun = [nounlist[i] for i in target_noun]
-        target_verb = [verblist[i] for i in target_verb]    
         # if mixup_fn is not None: # 잠시 mixup을 끈다.
         #     samples, target_noun, target_verb = mixup_fn(samples, targets)
         
         if loss_scaler is None: # deepspeed 라면 이부분이 실행된다. 근데 else문은 업데이트 안되있어서 deepspeed 없으면 오류 발생
             samples = samples.half()
-            loss, loss_noun, loss_verb, outputs_noun, outputs_verb = composition_train_class_batch(
+            loss, loss_noun, loss_verb, outputs_noun, outputs_verb, logits = composition_train_class_batch(
                 model, samples, target_noun, target_verb, criterion, nounlist, noundict, nountoken, verblist, verbdict, verbtoken, args.device)
         else:
             with torch.cuda.amp.autocast():
@@ -106,6 +108,22 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                 loss, outputs_noun, outpus_verb = composition_train_class_batch(
                     model, samples, target_noun, target_verb, criterion)
         loss_value = loss.item()   
+
+        if step % 30 == 0:
+            noun_sim = logits[0].softmax(dim=-1)
+            verb_sim = logits[1].softmax(dim=-1)
+            _, indices_noun = noun_sim.topk(5, dim=-1)
+            _, indices_verb = verb_sim.topk(5, dim=-1)
+            top1_noun = indices_noun[:,0] == targets[:,0]
+            top1_verb = indices_verb[:,0] == targets[:,1]
+            top5_noun = (indices_noun == repeat(targets[:,0], 'b -> b k', k=5)).sum(-1)
+            top5_verb = (indices_verb == repeat(targets[:,1], 'b -> b k', k=5)).sum(-1)
+            top1_noun_acc = top1_noun.sum() / len(top1_noun)
+            top1_verb_acc = top1_verb.sum() / len(top1_verb)
+            top5_noun_acc = top5_noun.sum() / len(top5_noun)
+            top5_verb_acc = top5_verb.sum() / len(top5_verb)
+            print("step: {}, top1_noun_acc: {}, top1_verb_acc: {}, top5_noun_acc: {}, top5_verb_acc: {}".format(step, top1_noun_acc, top1_verb_acc, top5_noun_acc, top5_verb_acc))
+            
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -200,9 +218,6 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
         samples = samples.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
         action_target = (target[:,1] * 1000) + target[:,0]
-        # target_noun, target_verb = targets[:,0], targets[:,1]
-        # target_noun = [nounlist[i] for i in target_noun]
-        # target_verb = [verblist[i] for i in target_verb]  
 
         # compute output
         with torch.cuda.amp.autocast():

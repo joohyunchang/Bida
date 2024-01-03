@@ -475,6 +475,7 @@ class STCrossTransformer(nn.Module):
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
+        self.clip_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
         self.vmae_fc_norm = norm_layer(embed_dim)
         
         # 768 to 512
@@ -529,24 +530,6 @@ class STCrossTransformer(nn.Module):
                     if isinstance(m2, nn.Linear):
                         nn.init.constant_(m2.weight, 0)
                         nn.init.constant_(m2.bias, 0)
-        
-    def replace_text_embedding(self, actionlist, actiondict, actiontoken):
-        text_embedding = self.embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
-        prompt_texttoken = torch.zeros(len(actionlist), 77)  
-
-        for i, a in enumerate(actionlist):
-            embedding = torch.from_numpy(actiondict[a][0]).float().to(self.device)
-            token = torch.from_numpy(actiontoken[a][0])
-            text_embedding[i][0] = embedding[0]
-            ind = np.argmax(token, -1)
-
-            text_embedding[i][self.prefix + 1: self.prefix + ind] = embedding[1:ind]
-            text_embedding[i][self.prefix + ind + self.postfix] = embedding[ind]
-
-            prompt_texttoken[i][0] = token[0]
-            prompt_texttoken[i][self.prefix + 1: self.prefix + ind] = token[1:ind]
-            prompt_texttoken[i][self.prefix + ind + self.postfix] = token[ind]
-        return text_embedding, prompt_texttoken
 
     def get_num_layers(self):
         return len(self.blocks)
@@ -598,6 +581,24 @@ class STCrossTransformer(nn.Module):
         
         return s_x, t_x
 
+    def replace_text_embedding(self, actionlist, actiondict, actiontoken):
+        text_embedding = self.embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
+        prompt_texttoken = torch.zeros(len(actionlist), 77)  
+
+        for i, a in enumerate(actionlist):
+            embedding = torch.from_numpy(actiondict[a][0]).float().to(self.device)
+            token = torch.from_numpy(actiontoken[a][0])
+            text_embedding[i][0] = embedding[0]
+            ind = np.argmax(token, -1)
+
+            text_embedding[i][self.prefix + 1: self.prefix + ind] = embedding[1:ind]
+            text_embedding[i][self.prefix + ind + self.postfix] = embedding[ind]
+
+            prompt_texttoken[i][0] = token[0]
+            prompt_texttoken[i][self.prefix + 1: self.prefix + ind] = token[1:ind]
+            prompt_texttoken[i][self.prefix + ind + self.postfix] = token[ind]
+        return text_embedding, prompt_texttoken
+    
     def forward(self, x, inp_nounlist, inp_verblist):
         noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
         verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken)
@@ -610,6 +611,8 @@ class STCrossTransformer(nn.Module):
             s_x = self.head_noun(s_x)
             t_x = self.head_verb_dropout(t_x)
             t_x = self.head_verb(t_x)
+            # s_x = s_x @ self.clip_proj
+            # t_x = t_x @ self.clip_proj
             return s_x, t_x, nounFeature, verbFeature
         else:
             s_x, t_x = self.forward_features(x)

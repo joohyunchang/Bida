@@ -114,19 +114,20 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         loss_value = loss.item()   
 
         # if (step * update_freq) % 60 == 0 and data_iter_step % update_freq == 0:
-        noun_sim = logits[0].softmax(dim=-1)
-        verb_sim = logits[1].softmax(dim=-1)
-        _, indices_noun = noun_sim.topk(5, dim=-1)
-        _, indices_verb = verb_sim.topk(5, dim=-1)
-        top1_noun = indices_noun[:,0] == targets[:,0]
-        top1_verb = indices_verb[:,0] == targets[:,1]
-        top5_noun = (indices_noun == repeat(targets[:,0], 'b -> b k', k=5)).sum(-1)
-        top5_verb = (indices_verb == repeat(targets[:,1], 'b -> b k', k=5)).sum(-1)
-        top1_noun_acc = top1_noun.sum() / len(top1_noun) * 100
-        top1_verb_acc = top1_verb.sum() / len(top1_verb) * 100
-        top5_noun_acc = top5_noun.sum() / len(top5_noun) * 100
-        top5_verb_acc = top5_verb.sum() / len(top5_verb) * 100
-            # print("step: {}, top1_noun_acc: {:.03f}, top1_verb_acc: {:.03f}, top5_noun_acc: {:.03f}, top5_verb_acc: {:.03f}".format(step, top1_noun_acc, top1_verb_acc, top5_noun_acc, top5_verb_acc))
+        # noun_sim = logits[0].softmax(dim=-1)
+        # verb_sim = logits[1].softmax(dim=-1)
+        # _, indices_noun = noun_sim.topk(5, dim=-1)
+        # _, indices_verb = verb_sim.topk(5, dim=-1)
+        # top1_noun = indices_noun[:,0] == targets[:,0]
+        # top1_verb = indices_verb[:,0] == targets[:,1]
+        # top5_noun = (indices_noun == repeat(targets[:,0], 'b -> b k', k=5)).sum(-1)
+        # top5_verb = (indices_verb == repeat(targets[:,1], 'b -> b k', k=5)).sum(-1)
+        # top1_noun_acc = top1_noun.sum() / len(top1_noun) * 100
+        # top1_verb_acc = top1_verb.sum() / len(top1_verb) * 100
+        # top5_noun_acc = top5_noun.sum() / len(top5_noun) * 100
+        # top5_verb_acc = top5_verb.sum() / len(top5_verb) * 100
+        top1_noun_acc, top1_verb_acc = accuracy(logits[0], targets[:,0], topk=(1, 5))
+        top5_noun_acc, top5_verb_acc = accuracy(logits[1], targets[:,1], topk=(1, 5))
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -251,9 +252,9 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
             loss_noun = criterion(noun_logits, target[:,0])
             loss_verb = criterion(verb_logits, target[:,1])
             
-        acc1_action, acc5_action = action_accuracy(loss_noun, loss_verb, action_target, topk=(1,5))
-        acc1_noun, acc5_noun = accuracy(loss_noun, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(loss_verb, target[:,1], topk=(1, 5))
+        acc1_action, acc5_action = action_accuracy(noun_logits, verb_logits, action_target, topk=(1,5))
+        acc1_noun, acc5_noun = accuracy(noun_logits, target[:,0], topk=(1, 5))
+        acc1_verb, acc5_verb = accuracy(verb_logits, target[:,1], topk=(1, 5))
         
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())
@@ -332,9 +333,9 @@ def final_test(args, data_loader, model, device, file, class_list):
                                                 str(int(split_nb[i].cpu().numpy())))
             final_result.append(string)
 
-        acc1_action, acc5_action = action_accuracy(loss_noun, loss_verb, action_target, topk=(1,5))
-        acc1_noun, acc5_noun = accuracy(loss_noun, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(loss_verb, target[:,1], topk=(1, 5))
+        acc1_action, acc5_action = action_accuracy(noun_logits, verb_logits, action_target, topk=(1,5))
+        acc1_noun, acc5_noun = accuracy(noun_logits, target[:,0], topk=(1, 5))
+        acc1_verb, acc5_verb = accuracy(verb_logits, target[:,1], topk=(1, 5))
 
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())

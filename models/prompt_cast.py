@@ -442,6 +442,7 @@ class STCrossTransformer(nn.Module):
         self.device = device
         self.clipmodel, _ = clip.load(clip_model, device=self.device, jit=False, return_intermediate_text_feature=0) 
         self.embedding = torch.nn.Embedding(77, self.text_dim)
+        self.embedding2 = torch.nn.Embedding(77, self.text_dim)
         
         for paramclip in self.clipmodel.parameters():
             paramclip.requires_grad = False
@@ -475,15 +476,17 @@ class STCrossTransformer(nn.Module):
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
-        # self.clip_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+        self.clip_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+        self.clip2_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
         self.vmae_fc_norm = norm_layer(embed_dim)
         
         # 768 to 512
         if self.composition:
-            self.head_verb = nn.Linear(embed_dim, text_dim)
-            self.head_verb_dropout = nn.Dropout(head_drop_rate)
-            self.head_noun = nn.Linear(embed_dim, text_dim)
-            self.head_noun_dropout = nn.Dropout(head_drop_rate)
+            # self.head_verb = nn.Linear(embed_dim, text_dim)
+            # self.head_verb_dropout = nn.Dropout(head_drop_rate)
+            # self.head_noun = nn.Linear(embed_dim, text_dim)
+            # self.head_noun_dropout = nn.Dropout(head_drop_rate)
+            pass
         else:
             self.noun_last_Adapter = Adapter(embed_dim, skip_connect=False)
             self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
@@ -497,15 +500,17 @@ class STCrossTransformer(nn.Module):
         self._init_adpater_weight()
         
         nn.init.normal_(self.embedding.weight, std=0.01)
+        nn.init.normal_(self.embedding2.weight, std=0.01)
         if self.composition:
-            self.head_verb.weight.data.mul_(init_scale)
-            self.head_verb.bias.data.mul_(init_scale)
-            self.head_noun.weight.data.mul_(init_scale)
-            self.head_noun.bias.data.mul_(init_scale)
+            # self.head_verb.weight.data.mul_(init_scale)
+            # self.head_verb.bias.data.mul_(init_scale)
+            # self.head_noun.weight.data.mul_(init_scale)
+            # self.head_noun.bias.data.mul_(init_scale)
             # nn.init.normal_(self.head_verb.weight, std=scale)
             # nn.init.normal_(self.head_noun.weight, std=scale)
             # nn.init.normal_(self.head_verb.bias, std=scale)
             # nn.init.normal_(self.head_noun.bias, std=scale)
+            pass
         else:
             nn.init.constant_(self.noun_last_Adapter.D_fc2.weight, 0)
             nn.init.constant_(self.verb_last_Adapter.D_fc2.weight, 0)
@@ -585,8 +590,11 @@ class STCrossTransformer(nn.Module):
         
         return s_x, t_x
 
-    def replace_text_embedding(self, actionlist, actiondict, actiontoken):
-        text_embedding = self.embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
+    def replace_text_embedding(self, actionlist, actiondict, actiontoken, embedding = 'noun'):
+        if embedding == 'noun':
+            text_embedding = self.embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
+        else:
+            text_embedding = self.embedding2(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
         prompt_texttoken = torch.zeros(len(actionlist), 77)  
 
         for i, a in enumerate(actionlist):
@@ -606,17 +614,18 @@ class STCrossTransformer(nn.Module):
     def forward(self, x, inp_nounlist, inp_verblist):
         noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
         verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken)
+        # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
         nounFeature = self.clipmodel.encode_text(noun_embedding, prompt_nountoken)
         verbFeature = self.clipmodel.encode_text(verb_embedding, prompt_verbtoken)
         
         if self.composition:
             s_x, t_x = self.forward_features(x)
-            s_x = self.head_noun_dropout(s_x)
-            s_x = self.head_noun(s_x)
-            t_x = self.head_verb_dropout(t_x)
-            t_x = self.head_verb(t_x)
-            # s_x = s_x @ self.clip_proj
-            # t_x = t_x @ self.clip_proj
+            # s_x = self.head_noun_dropout(s_x)
+            # s_x = self.head_noun(s_x)
+            # t_x = self.head_verb_dropout(t_x)
+            # t_x = self.head_verb(t_x)
+            s_x = s_x @ self.clip_proj
+            t_x = t_x @ self.clip2_proj
             return s_x, t_x, nounFeature, verbFeature
         else:
             s_x, t_x = self.forward_features(x)

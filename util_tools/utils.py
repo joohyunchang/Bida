@@ -396,6 +396,7 @@ def load_bidir_weights(model, args):
                 new_dict['blocks.'+ key[22:24] + '.clip_' + key[25:]] = checkpoint_clip[key]
         else:
             new_dict['clip_' + key] = checkpoint_clip[key]
+    new_dict['clip2_proj'] = checkpoint_clip['proj']
             
     # load로 불러온 pre-trained weight를 new_dict에 담아주고
     checkpoint_model = new_dict

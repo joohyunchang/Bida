@@ -251,9 +251,9 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
             loss_noun = criterion(noun_logits, target[:,0])
             loss_verb = criterion(verb_logits, target[:,1])
             
-        acc1_action, acc5_action = action_accuracy(outputs_noun, outputs_verb, action_target, topk=(1,5))
-        acc1_noun, acc5_noun = accuracy(outputs_noun, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(outputs_verb, target[:,1], topk=(1, 5))
+        acc1_action, acc5_action = action_accuracy(loss_noun, loss_verb, action_target, topk=(1,5))
+        acc1_noun, acc5_noun = accuracy(loss_noun, target[:,0], topk=(1, 5))
+        acc1_verb, acc5_verb = accuracy(loss_verb, target[:,1], topk=(1, 5))
         
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())
@@ -332,9 +332,9 @@ def final_test(args, data_loader, model, device, file, class_list):
                                                 str(int(split_nb[i].cpu().numpy())))
             final_result.append(string)
 
-        acc1_action, acc5_action = action_accuracy(outputs_noun, outputs_verb, action_target, topk=(1,5))
-        acc1_noun, acc5_noun = accuracy(outputs_noun, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(outputs_verb, target[:,1], topk=(1, 5))
+        acc1_action, acc5_action = action_accuracy(loss_noun, loss_verb, action_target, topk=(1,5))
+        acc1_noun, acc5_noun = accuracy(loss_noun, target[:,0], topk=(1, 5))
+        acc1_verb, acc5_verb = accuracy(loss_verb, target[:,1], topk=(1, 5))
 
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())

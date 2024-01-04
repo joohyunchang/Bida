@@ -475,7 +475,7 @@ class STCrossTransformer(nn.Module):
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
-        self.clip_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+        # self.clip_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
         self.vmae_fc_norm = norm_layer(embed_dim)
         
         # 768 to 512
@@ -502,6 +502,10 @@ class STCrossTransformer(nn.Module):
             self.head_verb.bias.data.mul_(init_scale)
             self.head_noun.weight.data.mul_(init_scale)
             self.head_noun.bias.data.mul_(init_scale)
+            # nn.init.normal_(self.head_verb.weight, std=scale)
+            # nn.init.normal_(self.head_noun.weight, std=scale)
+            # nn.init.normal_(self.head_verb.bias, std=scale)
+            # nn.init.normal_(self.head_noun.bias, std=scale)
         else:
             nn.init.constant_(self.noun_last_Adapter.D_fc2.weight, 0)
             nn.init.constant_(self.verb_last_Adapter.D_fc2.weight, 0)
@@ -636,7 +640,7 @@ def prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=None, *
 def compo_prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     nounlist, noundict, nountoken, verblist, verbdict, verbtoken = class_list
     model = STCrossTransformer(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
         nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
         device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, **kwargs)

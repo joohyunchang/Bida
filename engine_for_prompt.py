@@ -56,7 +56,6 @@ def get_loss_scale_for_deepspeed(model):
     optimizer = model.optimizer
     return optimizer.loss_scale if hasattr(optimizer, "loss_scale") else optimizer.cur_scale
 
-
 def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
@@ -67,12 +66,16 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('acc1_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    metric_logger.add_meter('acc1_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    metric_logger.add_meter('acc5_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    metric_logger.add_meter('acc5_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}')) 
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 10
+    print_freq = 20
     
     # prompt setting
     nounlist, noundict, nountoken, verblist, verbdict, verbtoken = class_list
-
+        
     if loss_scaler is None:
         model.zero_grad()
         model.micro_steps = 0
@@ -93,6 +96,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
 
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        batch_size = samples.shape[0]
 
         target_noun, target_verb = targets[:,0], targets[:,1]
         # if mixup_fn is not None: # 잠시 mixup을 끈다.
@@ -109,21 +113,20 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                     model, samples, target_noun, target_verb, criterion)
         loss_value = loss.item()   
 
-        if step % 30 == 0:
-            noun_sim = logits[0].softmax(dim=-1)
-            verb_sim = logits[1].softmax(dim=-1)
-            _, indices_noun = noun_sim.topk(5, dim=-1)
-            _, indices_verb = verb_sim.topk(5, dim=-1)
-            top1_noun = indices_noun[:,0] == targets[:,0]
-            top1_verb = indices_verb[:,0] == targets[:,1]
-            top5_noun = (indices_noun == repeat(targets[:,0], 'b -> b k', k=5)).sum(-1)
-            top5_verb = (indices_verb == repeat(targets[:,1], 'b -> b k', k=5)).sum(-1)
-            top1_noun_acc = top1_noun.sum() / len(top1_noun)
-            top1_verb_acc = top1_verb.sum() / len(top1_verb)
-            top5_noun_acc = top5_noun.sum() / len(top5_noun)
-            top5_verb_acc = top5_verb.sum() / len(top5_verb)
-            print("step: {}, top1_noun_acc: {}, top1_verb_acc: {}, top5_noun_acc: {}, top5_verb_acc: {}".format(step, top1_noun_acc, top1_verb_acc, top5_noun_acc, top5_verb_acc))
-            
+        # if (step * update_freq) % 60 == 0 and data_iter_step % update_freq == 0:
+        noun_sim = logits[0].softmax(dim=-1)
+        verb_sim = logits[1].softmax(dim=-1)
+        _, indices_noun = noun_sim.topk(5, dim=-1)
+        _, indices_verb = verb_sim.topk(5, dim=-1)
+        top1_noun = indices_noun[:,0] == targets[:,0]
+        top1_verb = indices_verb[:,0] == targets[:,1]
+        top5_noun = (indices_noun == repeat(targets[:,0], 'b -> b k', k=5)).sum(-1)
+        top5_verb = (indices_verb == repeat(targets[:,1], 'b -> b k', k=5)).sum(-1)
+        top1_noun_acc = top1_noun.sum() / len(top1_noun) * 100
+        top1_verb_acc = top1_verb.sum() / len(top1_verb) * 100
+        top5_noun_acc = top5_noun.sum() / len(top5_noun) * 100
+        top5_verb_acc = top5_verb.sum() / len(top5_verb) * 100
+            # print("step: {}, top1_noun_acc: {:.03f}, top1_verb_acc: {:.03f}, top5_noun_acc: {:.03f}, top5_verb_acc: {:.03f}".format(step, top1_noun_acc, top1_verb_acc, top5_noun_acc, top5_verb_acc))
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -180,7 +183,15 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                 weight_decay_value = group["weight_decay"]
         metric_logger.update(weight_decay=weight_decay_value)
         metric_logger.update(grad_norm=grad_norm)
-
+        metric_logger.update(acc1_noun=top1_noun_acc.item())
+        metric_logger.update(acc1_verb=top1_verb_acc.item())
+        metric_logger.update(acc5_noun=top5_noun_acc.item())
+        metric_logger.update(acc5_verb=top5_verb_acc.item())
+        metric_logger.meters['acc1_noun'].update(top1_noun_acc.item(), n=batch_size)
+        metric_logger.meters['acc1_verb'].update(top1_verb_acc.item(), n=batch_size)
+        metric_logger.meters['acc5_noun'].update(top5_noun_acc.item(), n=batch_size)
+        metric_logger.meters['acc5_verb'].update(top5_verb_acc.item(), n=batch_size)
+        
         if log_writer is not None:
             log_writer.update(loss=loss_value, head="loss")
             log_writer.update(class_acc=class_acc, head="loss")

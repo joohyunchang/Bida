@@ -419,7 +419,8 @@ class STCrossTransformer(nn.Module):
                  device = None,
                  clip_model = 'ViT-B/16',
                  prefix = None,
-                 postfix = None):
+                 postfix = None,
+                 split_prompt = False):
         super().__init__()
         self.num_classes = num_classes
         self.num_frames = all_frames
@@ -437,6 +438,7 @@ class STCrossTransformer(nn.Module):
         self.verblist = verblist
         self.verbdict = verbdict
         self.verbtoken = verbtoken
+        self.split_prompt = split_prompt
         
         
         self.device = device
@@ -612,9 +614,11 @@ class STCrossTransformer(nn.Module):
         return text_embedding, prompt_texttoken
     
     def forward(self, x, inp_nounlist, inp_verblist):
-        noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
-        verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken)
-        # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
+        noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, embedding= 'noun')
+        if self.split_prompt:
+            verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
+        else:
+            verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'noun')
         nounFeature = self.clipmodel.encode_text(noun_embedding, prompt_nountoken)
         verbFeature = self.clipmodel.encode_text(verb_embedding, prompt_verbtoken)
         
@@ -642,7 +646,7 @@ def prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=None, *
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, 
         nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
-        device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, **kwargs)
+        device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, split_prompt = args.split_prompt, **kwargs)
     return model
 
 @register_model
@@ -652,5 +656,5 @@ def compo_prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=N
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
         nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
-        device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, **kwargs)
+        device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, split_prompt = args.split_prompt, **kwargs)
     return model

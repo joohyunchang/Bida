@@ -209,6 +209,7 @@ def get_args():
     parser.add_argument('--fusion_method', default='add', choices=['add','mul','concat','weight'],
                         type=str, help='fusion_method')
     parser.add_argument('--throughput', action='store_true', dest='throughput')
+    parser.add_argument('--split_prompt', action='store_true', default=False)
     
     
     

@@ -443,9 +443,8 @@ class STCrossTransformer(nn.Module):
         
         self.device = device
         self.clipmodel, _ = clip.load(clip_model, device=self.device, jit=False, return_intermediate_text_feature=0) 
-        self.video_embedding = torch.nn.Embedding(77, self.text_dim)
-        if split_prompt:
-            self.video_embedding2 = torch.nn.Embedding(77, self.text_dim)
+        self.noub_embedding = torch.nn.Embedding(77, self.text_dim)
+        self.verb_embedding = torch.nn.Embedding(77, self.text_dim)
         
         for paramclip in self.clipmodel.parameters():
             paramclip.requires_grad = False
@@ -479,8 +478,8 @@ class STCrossTransformer(nn.Module):
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
-        self.clip_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
-        self.clip2_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+        self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+        self.clip_verb_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
         self.vmae_fc_norm = norm_layer(embed_dim)
         
         # 768 to 512
@@ -502,9 +501,8 @@ class STCrossTransformer(nn.Module):
         self.apply(self._init_weights)
         self._init_adpater_weight()
         
-        nn.init.normal_(self.video_embedding.weight, std=0.01)
-        if split_prompt:
-            nn.init.normal_(self.video_embedding2.weight, std=0.01)
+        nn.init.normal_(self.noun_embedding.weight, std=0.01)
+        nn.init.normal_(self.verb_embedding.weight, std=0.01)
         if self.composition:
             # self.head_verb.weight.data.mul_(init_scale)
             # self.head_verb.bias.data.mul_(init_scale)
@@ -596,9 +594,9 @@ class STCrossTransformer(nn.Module):
 
     def replace_text_embedding(self, actionlist, actiondict, actiontoken, embedding = 'noun'):
         if embedding == 'noun':
-            text_embedding = self.video_embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
+            text_embedding = self.noun_embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
         else:
-            text_embedding = self.video_embedding2(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
+            text_embedding = self.verb_embedding2(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
         prompt_texttoken = torch.zeros(len(actionlist), 77)  
 
         for i, a in enumerate(actionlist):
@@ -617,10 +615,8 @@ class STCrossTransformer(nn.Module):
     
     def forward(self, x, inp_nounlist, inp_verblist):
         noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, embedding= 'noun')
-        if self.split_prompt:
-            verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
-        else:
-            verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'noun')
+        verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
+        # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'noun')
         nounFeature = self.clipmodel.encode_text(noun_embedding, prompt_nountoken)
         verbFeature = self.clipmodel.encode_text(verb_embedding, prompt_verbtoken)
         

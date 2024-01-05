@@ -444,7 +444,8 @@ class STCrossTransformer(nn.Module):
         self.device = device
         self.clipmodel, _ = clip.load(clip_model, device=self.device, jit=False, return_intermediate_text_feature=0) 
         self.embedding = torch.nn.Embedding(77, self.text_dim)
-        self.embedding2 = torch.nn.Embedding(77, self.text_dim)
+        if split_prompt:
+            self.embedding2 = torch.nn.Embedding(77, self.text_dim)
         
         for paramclip in self.clipmodel.parameters():
             paramclip.requires_grad = False
@@ -502,7 +503,8 @@ class STCrossTransformer(nn.Module):
         self._init_adpater_weight()
         
         nn.init.normal_(self.embedding.weight, std=0.01)
-        nn.init.normal_(self.embedding2.weight, std=0.01)
+        if split_prompt:
+            nn.init.normal_(self.embedding2.weight, std=0.01)
         if self.composition:
             # self.head_verb.weight.data.mul_(init_scale)
             # self.head_verb.bias.data.mul_(init_scale)

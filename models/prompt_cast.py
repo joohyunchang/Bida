@@ -443,7 +443,7 @@ class STCrossTransformer(nn.Module):
         
         self.device = device
         self.clipmodel, _ = clip.load(clip_model, device=self.device, jit=False, return_intermediate_text_feature=0) 
-        self.noub_embedding = torch.nn.Embedding(77, self.text_dim)
+        self.noun_embedding = torch.nn.Embedding(77, self.text_dim)
         self.verb_embedding = torch.nn.Embedding(77, self.text_dim)
         
         for paramclip in self.clipmodel.parameters():
@@ -596,7 +596,7 @@ class STCrossTransformer(nn.Module):
         if embedding == 'noun':
             text_embedding = self.noun_embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
         else:
-            text_embedding = self.verb_embedding2(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
+            text_embedding = self.verb_embedding(torch.arange(77).to(self.device))[None, :].repeat([len(actionlist), 1, 1])
         prompt_texttoken = torch.zeros(len(actionlist), 77)  
 
         for i, a in enumerate(actionlist):

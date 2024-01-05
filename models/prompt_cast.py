@@ -626,8 +626,8 @@ class STCrossTransformer(nn.Module):
             # s_x = self.head_noun(s_x)
             # t_x = self.head_verb_dropout(t_x)
             # t_x = self.head_verb(t_x)
-            s_x = s_x @ self.clip_proj
-            t_x = t_x @ self.clip2_proj
+            s_x = s_x @ self.clip_noun_proj
+            t_x = t_x @ self.clip_verb_proj
             return s_x, t_x, nounFeature, verbFeature
         else:
             s_x, t_x = self.forward_features(x)

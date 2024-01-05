@@ -613,8 +613,8 @@ class STCrossTransformer(nn.Module):
     
     def forward(self, x, inp_nounlist, inp_verblist):
         noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
-        verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken)
-        # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
+        # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken)
+        verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
         nounFeature = self.clipmodel.encode_text(noun_embedding, prompt_nountoken)
         verbFeature = self.clipmodel.encode_text(verb_embedding, prompt_verbtoken)
         

@@ -469,7 +469,7 @@ def main(args, ds_init):
             exit(0)
         else:
             preds_file = os.path.join(args.output_dir, str(global_rank) + '.txt')
-            test_stats = final_test(args, data_loader_test, model, device, preds_file)
+            test_stats = final_test(args, data_loader_test, model, device, preds_file,class_list=class_list)
             torch.distributed.barrier()
             if global_rank == 0:
                 print("Start merging results...")
@@ -564,7 +564,7 @@ def main(args, ds_init):
             with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
     preds_file = os.path.join(args.output_dir, str(global_rank) + '.txt')
-    test_stats = final_test(args, data_loader_test, model, device, preds_file)
+    test_stats = final_test(args, data_loader_test, model, device, preds_file, class_list=class_list)
     torch.distributed.barrier()
     if global_rank == 0:
         print("Start merging results...")

@@ -490,7 +490,7 @@ class STCrossTransformer(nn.Module):
         else:
             self.noun_last_Adapter = Adapter(embed_dim, skip_connect=False)
             self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
-            self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+            self.head = nn.Linear(embed_dim, text_dim) if text_dim > 0 else nn.Identity()
             self.head_dropout = nn.Dropout(head_drop_rate)
 
         if use_learnable_pos_emb:
@@ -613,8 +613,8 @@ class STCrossTransformer(nn.Module):
     
     def forward(self, x, inp_nounlist, inp_verblist):
         noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
-        # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken)
-        verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
+        verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken)
+        # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
         nounFeature = self.clipmodel.encode_text(noun_embedding, prompt_nountoken)
         verbFeature = self.clipmodel.encode_text(verb_embedding, prompt_verbtoken)
         

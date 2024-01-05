@@ -324,8 +324,8 @@ def final_test(args, data_loader, model, device, file, class_list):
 
         for i in range(outputs_noun.size(0)):
             string = "{} {} {} {} {} {} {} {}\n".format(ids[i], \
-                                                str(outputs_noun.data[i].cpu().numpy().tolist()), \
-                                                str(outputs_verb.data[i].cpu().numpy().tolist()), \
+                                                str(noun_logits.data[i].cpu().numpy().tolist()), \
+                                                str(verb_logits.data[i].cpu().numpy().tolist()), \
                                                 str(int(action_target[i].cpu().numpy())), \
                                                 str(int(target[i,0].cpu().numpy())), \
                                                 str(int(target[i,1].cpu().numpy())), \

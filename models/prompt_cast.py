@@ -443,8 +443,11 @@ class STCrossTransformer(nn.Module):
         
         self.device = device
         self.clipmodel, _ = clip.load(clip_model, device=self.device, jit=False, return_intermediate_text_feature=0) 
-        self.noun_embedding = torch.nn.Embedding(77, self.text_dim)
-        self.verb_embedding = torch.nn.Embedding(77, self.text_dim)
+        if self.composition:
+            self.noun_embedding = torch.nn.Embedding(77, self.text_dim)
+            self.verb_embedding = torch.nn.Embedding(77, self.text_dim)
+        else:
+            self.noun_embedding = torch.nn.Embedding(77, self.text_dim)
         
         for paramclip in self.clipmodel.parameters():
             paramclip.requires_grad = False
@@ -478,12 +481,12 @@ class STCrossTransformer(nn.Module):
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
-        self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
-        self.clip_verb_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
         self.vmae_fc_norm = norm_layer(embed_dim)
         
         # 768 to 512
         if self.composition:
+            self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+            self.clip_verb_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
             # self.head_verb = nn.Linear(embed_dim, text_dim)
             # self.head_verb_dropout = nn.Dropout(head_drop_rate)
             # self.head_noun = nn.Linear(embed_dim, text_dim)
@@ -492,8 +495,9 @@ class STCrossTransformer(nn.Module):
         else:
             self.noun_last_Adapter = Adapter(embed_dim, skip_connect=False)
             self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
-            self.head = nn.Linear(embed_dim, text_dim) if text_dim > 0 else nn.Identity()
-            self.head_dropout = nn.Dropout(head_drop_rate)
+            # self.head = nn.Linear(embed_dim, text_dim) if text_dim > 0 else nn.Identity()
+            # self.head_dropout = nn.Dropout(head_drop_rate)
+            self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
 
         if use_learnable_pos_emb:
             trunc_normal_(self.pos_embed, std=.02)
@@ -501,9 +505,9 @@ class STCrossTransformer(nn.Module):
         self.apply(self._init_weights)
         self._init_adpater_weight()
         
-        nn.init.normal_(self.noun_embedding.weight, std=0.01)
-        nn.init.normal_(self.verb_embedding.weight, std=0.01)
         if self.composition:
+            nn.init.normal_(self.noun_embedding.weight, std=0.01)
+            nn.init.normal_(self.verb_embedding.weight, std=0.01)
             # self.head_verb.weight.data.mul_(init_scale)
             # self.head_verb.bias.data.mul_(init_scale)
             # self.head_noun.weight.data.mul_(init_scale)
@@ -514,10 +518,11 @@ class STCrossTransformer(nn.Module):
             # nn.init.normal_(self.head_noun.bias, std=scale)
             pass
         else:
+            nn.init.normal_(self.noun_embedding.weight, std=0.01)
             nn.init.constant_(self.noun_last_Adapter.D_fc2.weight, 0)
             nn.init.constant_(self.verb_last_Adapter.D_fc2.weight, 0)
-            self.head.weight.data.mul_(init_scale)
-            self.head.bias.data.mul_(init_scale)
+            # self.head.weight.data.mul_(init_scale)
+            # self.head.bias.data.mul_(init_scale)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -613,14 +618,13 @@ class STCrossTransformer(nn.Module):
             prompt_texttoken[i][self.prefix + ind + self.postfix] = token[ind]
         return text_embedding, prompt_texttoken
     
-    def forward(self, x, inp_nounlist, inp_verblist):
-        noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, embedding= 'noun')
-        verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
-        # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'noun')
-        nounFeature = self.clipmodel.encode_text(noun_embedding, prompt_nountoken)
-        verbFeature = self.clipmodel.encode_text(verb_embedding, prompt_verbtoken)
-        
+    def forward(self, x, inp_nounlist, inp_verblist):        
         if self.composition:
+            noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, embedding= 'noun')
+            verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
+            # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'noun')
+            nounFeature = self.clipmodel.encode_text(noun_embedding, prompt_nountoken)
+            verbFeature = self.clipmodel.encode_text(verb_embedding, prompt_verbtoken)
             s_x, t_x = self.forward_features(x)
             # s_x = self.head_noun_dropout(s_x)
             # s_x = self.head_noun(s_x)
@@ -630,20 +634,23 @@ class STCrossTransformer(nn.Module):
             t_x = t_x @ self.clip_verb_proj
             return s_x, t_x, nounFeature, verbFeature
         else:
+            text_embedding, prompt_texttoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
+            textFeature = self.clipmodel.encode_text(text_embedding, prompt_texttoken)
             s_x, t_x = self.forward_features(x)
             x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
-            x = self.head_dropout(x)
-            x = self.head(x)
-            return x
+            x = x @ self.clip_noun_proj
+            # x = self.head_dropout(x)
+            # x = self.head(x)
+            return x, textFeature
 
 
 @register_model
 def prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    nounlist, noundict, nountoken, verblist, verbdict, verbtoken = class_list
+    textlist, textdict, texttoken = class_list
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, 
-        nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
+        nounlist = textlist, noundict=textdict, nountoken=texttoken,
         device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, split_prompt = args.split_prompt, **kwargs)
     return model
 
@@ -654,5 +661,5 @@ def compo_prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=N
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
         nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
-        device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, split_prompt = args.split_prompt, **kwargs)
+        device = args.device, clip_model = args.clip_finetune, prefix = 0, postfix = 0, split_prompt = args.split_prompt, **kwargs)
     return model

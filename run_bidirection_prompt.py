@@ -331,8 +331,7 @@ def main(args, ds_init):
     args.window_size = 16
     args.patch_size = patch_size
     
-    if args.composition:
-        class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=args.device)
+    class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=args.device)
     
     model = create_model(
           args.vmae_model,
@@ -482,7 +481,6 @@ def main(args, ds_init):
                                 'Final Top-1 Noun': final_top1_noun,
                                 'Final Top-1 Verb': final_top1_verb}
                 else:
-                    print("Start merging results...")
                     final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
                     print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
                     log_stats = {'Final top-1': final_top1, 

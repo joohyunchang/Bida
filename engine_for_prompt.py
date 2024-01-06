@@ -126,8 +126,8 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         # top1_verb_acc = top1_verb.sum() / len(top1_verb) * 100
         # top5_noun_acc = top5_noun.sum() / len(top5_noun) * 100
         # top5_verb_acc = top5_verb.sum() / len(top5_verb) * 100
-        top1_noun_acc, top1_verb_acc = accuracy(logits[0], targets[:,0], topk=(1, 5))
-        top5_noun_acc, top5_verb_acc = accuracy(logits[1], targets[:,1], topk=(1, 5))
+        top1_noun_acc, top5_noun_acc = accuracy(logits[0], targets[:,0], topk=(1, 5))
+        top1_verb_acc, top5_verb_acc = accuracy(logits[1], targets[:,1], topk=(1, 5))
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))

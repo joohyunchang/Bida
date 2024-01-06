@@ -661,5 +661,5 @@ def compo_prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=N
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
         nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
-        device = args.device, clip_model = args.clip_finetune, prefix = 0, postfix = 0, split_prompt = args.split_prompt, **kwargs)
+        device = args.device, clip_model = args.clip_finetune, prefix = 16, postfix = 16, split_prompt = args.split_prompt, **kwargs)
     return model

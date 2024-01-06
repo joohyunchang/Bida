@@ -459,7 +459,7 @@ def main(args, ds_init):
     if args.composition:
         from engine_for_prompt import train_one_epoch, validation_one_epoch, final_test, merge
     else:
-        from engine_for_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
+        from engine_for_prompt_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
     
     if args.eval:
         if args.throughput:

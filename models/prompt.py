@@ -50,7 +50,32 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         nountoken = OrderedDict((nounlist[i], nountoken[i]) for i in range(300))
         verbtoken = OrderedDict((verblist[i], verbtoken[i]) for i in range(97))
 
+        del clipmodel
+        torch.cuda.empty_cache()
+        
         return [nounlist, noundict, nountoken, verblist, verbdict, verbtoken]
+    
+    elif dataset == 'diving-48':
+        anno_path = os.path.join(data_path, 'class.csv')
+        cleaned = pd.read_csv(anno_path, header=None, delimiter=',')
+        # list_0 = list(cleaned.values[:, 0])
+        # list_1 = list(cleaned.values[:, 1])
+        # list_2 = list(cleaned.values[:, 2])
+        # list_3 = list(cleaned.values[:, 3])
+        actionlist = list(cleaned.values[:, 4])
+        actiontoken = np.array([convert_to_token(a) for a in actionlist])
+    
+        # query the vector from dictionary
+        with torch.no_grad():
+            actionembed = clipmodel.encode_text_light(torch.tensor(actiontoken).to(device))
+
+        actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(300))
+        actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(300))
+
+        del clipmodel
+        torch.cuda.empty_cache()
+        
+        return [actionlist, actiondict, actiontoken]
     
     # query the vector from dictionary
     with torch.no_grad():
@@ -58,7 +83,8 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
 
     actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(numC[dataset]))
     actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(numC[dataset]))
-
-    return actionlist, actiondict, actiontoken
-
-# nounlist, noundict, nountoken, verblist, verbdict, verbtoken = text_prompt(dataset='ek100', data_path='./result')
+    
+    del clipmodel
+    torch.cuda.empty_cache()
+    
+    return [actionlist, actiondict, actiontoken]

@@ -14,25 +14,28 @@ import random
 
 def composition_train_class_batch(model, samples, target_noun, target_verb, criterion,
                                   nounlist, noundict, nountoken, verblist, verbdict, verbtoken, device):
-    numContrast = 400
     featnorm = 1
+    randContrast = False
     
-    # sample positive and negative
-    # target_noun = [nounlist[i] for i in target_noun]
-    # target_verb = [verblist[i] for i in target_verb]
-    # noun_uniqname = np.unique(target_noun)
-    # verb_uniqname = np.unique(target_verb)
-    # noun_numNeg = numContrast - len(noun_uniqname)
-    # verb_numNeg = numContrast - len(verb_uniqname)
-    # noun_complement = list(set(nounlist) - set(noun_uniqname))
-    # verb_complement = list(set(verblist) - set(verb_uniqname))
-    # inp_nounlist = noun_uniqname.tolist() + random.sample(noun_complement, min(noun_numNeg, len(noun_complement)))
-    # inp_verblist = verb_uniqname.tolist() + random.sample(verb_complement, min(verb_numNeg, len(verb_complement)))
-    # noun_targets = torch.tensor([inp_nounlist.index(n) for n in target_noun]).to(device)
-    # verb_targets = torch.tensor([inp_verblist.index(v) for v in target_verb]).to(device)
+    if randContrast:
+        numContrast = 400 
+         
+        # sample positive and negative
+        target_noun = [nounlist[i] for i in target_noun]
+        target_verb = [verblist[i] for i in target_verb]
+        noun_uniqname = np.unique(target_noun)
+        verb_uniqname = np.unique(target_verb)
+        noun_numNeg = numContrast - len(noun_uniqname)
+        verb_numNeg = numContrast - len(verb_uniqname)
+        noun_complement = list(set(nounlist) - set(noun_uniqname))
+        verb_complement = list(set(verblist) - set(verb_uniqname))
+        inp_nounlist = noun_uniqname.tolist() + random.sample(noun_complement, min(noun_numNeg, len(noun_complement)))
+        inp_verblist = verb_uniqname.tolist() + random.sample(verb_complement, min(verb_numNeg, len(verb_complement)))
+        noun_targets = torch.tensor([inp_nounlist.index(n) for n in target_noun]).to(device)
+        verb_targets = torch.tensor([inp_verblist.index(v) for v in target_verb]).to(device)
+    else:
+        noun_targets, verb_targets = target_noun, target_verb
     
-    # outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, inp_nounlist, inp_verblist)
-    noun_targets, verb_targets = target_noun, target_verb
     outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
     if featnorm:
         outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)

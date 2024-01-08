@@ -236,8 +236,12 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
 
         # compute output
         with torch.cuda.amp.autocast():
-            if idx == 0:
+            if idx == 0 or args.ov == 'both':
                 outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
+            elif args.ov == 'noun':
+                outputs_noun, outputs_verb, nounFeature, _ = model(samples, nounlist, verblist[:1])
+            elif args.ov == 'verb':
+                outputs_noun, outputs_verb, _, verbFeature = model(samples, nounlist[:1], verblist)
             else:
                 outputs_noun, outputs_verb, _, _ = model(samples, nounlist[:1], verblist[:1])
                 
@@ -306,8 +310,12 @@ def final_test(args, data_loader, model, device, file, class_list):
         action_target = (target[:,1] * 1000) + target[:,0]
         # compute output
         with torch.cuda.amp.autocast():
-            if idx == 0:
+            if idx == 0 or args.ov == 'both':
                 outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
+            elif args.ov == 'noun':
+                outputs_noun, outputs_verb, nounFeature, _ = model(samples, nounlist, verblist[:1])
+            elif args.ov == 'verb':
+                outputs_noun, outputs_verb, _, verbFeature = model(samples, nounlist[:1], verblist)
             else:
                 outputs_noun, outputs_verb, _, _ = model(samples, nounlist[:1], verblist[:1])
                 

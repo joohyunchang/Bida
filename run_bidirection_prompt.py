@@ -211,6 +211,8 @@ def get_args():
                         type=str, help='fusion_method')
     parser.add_argument('--throughput', action='store_true', dest='throughput')
     parser.add_argument('--split_prompt', action='store_true', default=False)
+    parser.add_argument('--ov', default=None, choices=['noun','verb','both'],
+                        type=str, help='text_input')
     
     
     

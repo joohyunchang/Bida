@@ -42,11 +42,11 @@ def composition_train_class_batch(model, samples, target_noun, target_verb, crit
         outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
         nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
         verbFeature = verbFeature / verbFeature.norm(dim=-1, keepdim=True)
-        noun_logits = outputs_noun @ nounFeature.t() / 0.07
-        verb_logits = outputs_verb @ verbFeature.t() / 0.07
+        noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
+        verb_logits = outputs_verb @ verbFeature.t() / 0.07 if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1) / 0.07
     else:
-        noun_logits = outputs_noun @ nounFeature.t()
-        verb_logits = outputs_verb @ verbFeature.t()
+        noun_logits = outputs_noun @ nounFeature.t() if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1)
+        verb_logits = outputs_verb @ verbFeature.t() if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1)
         
     loss_noun = criterion(noun_logits, noun_targets)
     loss_verb = criterion(verb_logits, verb_targets)
@@ -246,11 +246,11 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
                 outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
                 nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
                 verbFeature = verbFeature / verbFeature.norm(dim=-1, keepdim=True)
-                noun_logits = outputs_noun @ nounFeature.t() / 0.07
-                verb_logits = outputs_verb @ verbFeature.t() / 0.07
+                noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
+                verb_logits = outputs_verb @ verbFeature.t() / 0.07 if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1) / 0.07
             else:
-                noun_logits = outputs_noun @ nounFeature.t()
-                verb_logits = outputs_verb @ verbFeature.t()
+                noun_logits = outputs_noun @ nounFeature.t() if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1)
+                verb_logits = outputs_verb @ verbFeature.t() if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1)
                 
             loss_noun = criterion(noun_logits, target[:,0])
             loss_verb = criterion(verb_logits, target[:,1])
@@ -316,11 +316,11 @@ def final_test(args, data_loader, model, device, file, class_list):
                 outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
                 nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
                 verbFeature = verbFeature / verbFeature.norm(dim=-1, keepdim=True)
-                noun_logits = outputs_noun @ nounFeature.t() / 0.07
-                verb_logits = outputs_verb @ verbFeature.t() / 0.07
+                noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
+                verb_logits = outputs_verb @ verbFeature.t() / 0.07 if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1) / 0.07
             else:
-                noun_logits = outputs_noun @ nounFeature.t()
-                verb_logits = outputs_verb @ verbFeature.t()
+                noun_logits = outputs_noun @ nounFeature.t() if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1)
+                verb_logits = outputs_verb @ verbFeature.t() if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1)
                 
             loss_noun = criterion(noun_logits, target[:,0])
             loss_verb = criterion(verb_logits, target[:,1])

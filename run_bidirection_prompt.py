@@ -27,6 +27,7 @@ import models.bidir_modeling_crossattn
 import models.bidir_aim_modeling_crossattn
 import models.bidir_modeling_crossattn_concat
 import models.prompt_cast
+import models.ov_cast
 import models.AIM
 from models.prompt import text_prompt
 

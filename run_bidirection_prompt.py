@@ -216,6 +216,7 @@ def get_args():
                         type=str, help='text_input')
     parser.add_argument('--eval_result', action='store_true',
                         help='Perform evaluation only')
+    parser.add_argument('--kd', action='store_true', default=False)
     
     
     
@@ -254,7 +255,7 @@ def main(args, ds_init):
 
     cudnn.benchmark = True
 
-    dataset_train, args.nb_classes = build_dataset(is_train=True, test_mode=False, args=args)
+    dataset_train, _ = build_dataset(is_train=True, test_mode=False, args=args)
     if args.disable_eval_during_finetuning:
         dataset_val = None
     else:
@@ -337,25 +338,42 @@ def main(args, ds_init):
     args.window_size = 16
     args.patch_size = patch_size
     
-    class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=args.device)
-    
-    model = create_model(
-          args.vmae_model,
-          pretrained=False,
-          num_classes=args.nb_classes,
-          all_frames=args.num_frames * args.num_segments,
-          tubelet_size=args.tubelet_size,
-          drop_rate=args.drop,
-          drop_path_rate=args.drop_path,
-          attn_drop_rate=args.attn_drop_rate,
-          drop_block_rate=None,
-          use_mean_pooling=args.use_mean_pooling,
-          init_scale=args.init_scale,
-          fusion_method=args.fusion_method,
-          class_list = class_list,
-          args = args,
-        #   head_drop_rate=args.head_drop
-      )
+    if args.kd:
+        class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=args.device, useEncoder=True)
+        model = create_model(
+            args.vmae_model,
+            pretrained=False,
+            num_classes=args.nb_classes,
+            all_frames=args.num_frames * args.num_segments,
+            tubelet_size=args.tubelet_size,
+            drop_rate=args.drop,
+            drop_path_rate=args.drop_path,
+            attn_drop_rate=args.attn_drop_rate,
+            drop_block_rate=None,
+            use_mean_pooling=args.use_mean_pooling,
+            init_scale=args.init_scale,
+            fusion_method=args.fusion_method,
+            #   head_drop_rate=args.head_drop
+        )
+    else:
+        class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=args.device)
+        model = create_model(
+            args.vmae_model,
+            pretrained=False,
+            num_classes=args.nb_classes,
+            all_frames=args.num_frames * args.num_segments,
+            tubelet_size=args.tubelet_size,
+            drop_rate=args.drop,
+            drop_path_rate=args.drop_path,
+            attn_drop_rate=args.attn_drop_rate,
+            drop_block_rate=None,
+            use_mean_pooling=args.use_mean_pooling,
+            init_scale=args.init_scale,
+            fusion_method=args.fusion_method,
+            class_list = class_list,
+            args = args,
+            #   head_drop_rate=args.head_drop
+        )
     
     if args.fine_tune is not None:
         laod_eval_weights(model, args.fine_tune, args)
@@ -487,7 +505,9 @@ def main(args, ds_init):
                     log_stats = {'Final Top-1 Action': final_top1_action,
                                 'Final Top-5 Action': final_top5_action,
                                 'Final Top-1 Noun': final_top1_noun,
-                                'Final Top-1 Verb': final_top1_verb}
+                                'Final Top-1 Verb': final_top1_verb,
+                                'Final Top-5 Noun': final_top5_noun,
+                                'Final Top-5 Verb': final_top5_verb}
                     
                     # ======== save prediction result ======== #
                     import pandas as pd
@@ -499,10 +519,28 @@ def main(args, ds_init):
                     pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
                     pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
                 else:
-                    final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
+                    final_top1 ,final_top5, pred, label = merge(args.output_dir, num_tasks, return_result=True)
+                    pred_noun , pred_verb, label_noun, label_verb = pred % 300, pred // 300, label % 300, label // 300
+                    top1_noun = pred_noun == label_noun
+                    top1_verb = pred_verb == label_verb
+                    final_top1_noun = top1_noun.sum() / len(top1_noun) * 100
+                    final_top1_verb = top1_verb.sum() / len(top1_verb) * 100
+                    
                     print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
                     log_stats = {'Final top-1': final_top1, 
-                                'Final Top-5': final_top5}
+                                'Final Top-5': final_top5,
+                                'Final Top-1 Noun': final_top1_noun,
+                                'Final Top-1 Verb': final_top1_verb}
+                    
+                    # ======== save prediction result ======== #
+                    import pandas as pd
+                    pred_noun = [class_list[0][i] for i in pred_noun]
+                    pred_verb = [class_list[3][i] for i in pred_verb]
+                    label_noun = [class_list[0][int(i)] for i in label_noun]
+                    label_verb = [class_list[3][int(i)] for i in label_verb]
+                    pred_df = pd.DataFrame({'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun})
+                    pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
+                    pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
                 if args.output_dir and utils.is_main_process():
                     with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                         f.write(json.dumps(log_stats) + "\n")
@@ -608,13 +646,30 @@ def main(args, ds_init):
             pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
             pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
         else:
-            final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
+            final_top1 ,final_top5, pred, label = merge(args.output_dir, num_tasks, return_result=True)
+            pred_noun , pred_verb, label_noun, label_verb = pred % 300, pred // 300, label % 300, label // 300
+            top1_noun = pred_noun == label_noun
+            top1_verb = pred_verb == label_verb
+            final_top1_noun = top1_noun.sum() / len(top1_noun) * 100
+            final_top1_verb = top1_verb.sum() / len(top1_verb) * 100
             print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
             log_stats = {'Final top-1': final_top1,
-                        'Final Top-5': final_top5}
+                        'Final Top-5': final_top5,
+                        'Final Top-1 Noun': final_top1_noun,
+                        'Final Top-1 Verb': final_top1_verb}
             if args.output_dir and utils.is_main_process():
                 with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                     f.write(json.dumps(log_stats) + "\n")
+                    
+            # ======== save prediction result ======== #
+            import pandas as pd
+            pred_noun = [class_list[0][i] for i in pred_noun]
+            pred_verb = [class_list[3][i] for i in pred_verb]
+            label_noun = [class_list[0][int(i)] for i in label_noun]
+            label_verb = [class_list[3][int(i)] for i in label_verb]
+            pred_df = pd.DataFrame({'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun})
+            pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
+            pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
     
 
     total_time = time.time() - start_time

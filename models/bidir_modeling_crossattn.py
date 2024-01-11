@@ -451,8 +451,8 @@ class STCrossTransformer(nn.Module):
             self.head_noun = nn.Linear(embed_dim, 300)
             self.head_noun_dropout = nn.Dropout(head_drop_rate)
         else:
-            self.noun_last_Adapter = Adapter(embed_dim, skip_connect=False)
-            self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
+            self.noun_last_Adapter = Adapter(embed_dim, skip_connect=True)
+            self.verb_last_Adapter = Adapter(embed_dim, skip_connect=True)
             self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
             self.head_dropout = nn.Dropout(head_drop_rate)
 
@@ -513,7 +513,9 @@ class STCrossTransformer(nn.Module):
     
     def reset_fcnorm(self):
         self.vmae_fc_norm = nn.LayerNorm(self.embed_dim)
-
+    
+    
+    
     def forward_features(self, x):
         B = x.shape[0]
         s_x = x[:, :, 1::2, :, :] # pick even frames
@@ -557,12 +559,10 @@ class STCrossTransformer(nn.Module):
             return s_x, t_x
         else:
             s_x, t_x = self.forward_features(x)
-            x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+            x = (self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x))/2
             x = self.head_dropout(x)
             x = self.head(x)
             return x
-
-
 
 @register_model
 def bidir_vit_base_patch16_224(pretrained=False, **kwargs):

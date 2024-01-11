@@ -495,7 +495,7 @@ class STCrossTransformer(nn.Module):
             # self.clip_verb_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
             self.head_verb = nn.Linear(embed_dim, 97)
             self.head_verb_dropout = nn.Dropout(head_drop_rate)
-            # self.head_noun = nn.Linear(embed_dim, text_dim)
+            # self.head_noun = nn.Linear(embed_dim, 300)
             # self.head_noun_dropout = nn.Dropout(head_drop_rate)
             pass
         else:

@@ -300,7 +300,7 @@ def build_dataset(is_train, test_mode, args):
     else:
         raise NotImplementedError()
     
-    assert nb_classes == args.nb_classes
+    # assert nb_classes == args.nb_classes
     print("Number of the class = %d" % args.nb_classes)
 
     return dataset, nb_classes

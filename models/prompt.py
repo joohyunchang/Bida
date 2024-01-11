@@ -33,27 +33,34 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
     elif dataset == 'EPIC':
         noun_anno_path = os.path.join(data_path, 'epic100_noun_classes.csv')
         verb_anno_path = os.path.join(data_path, 'epic100_verb_classes.csv')
+        action_anno_path = os.path.join(data_path, 'epic100_action_classes.csv')
         noun_cleaned = pd.read_csv(noun_anno_path, header=None, delimiter=',')
         verb_cleaned = pd.read_csv(verb_anno_path, header=None, delimiter=',')
+        action_cleaned = pd.read_csv(action_anno_path, header=None, delimiter=',')
         nounlist = list(noun_cleaned.values[:, 0])
         verblist = list(verb_cleaned.values[:, 0])
+        actionlist = list(action_cleaned.values[:, 0])
         nountoken = np.array([convert_to_token(a) for a in nounlist])
         verbtoken = np.array([convert_to_token(a) for a in verblist])
+        actiontoken = np.array([convert_to_token(a) for a in actionlist])
     
         # query the vector from dictionary
         with torch.no_grad():
             nounembed = clipmodel.encode_text_light(torch.tensor(nountoken).to(device))
             verbembed = clipmodel.encode_text_light(torch.tensor(verbtoken).to(device))
+            actionembed = clipmodel.encode_text_light(torch.tensor(actiontoken).to(device))
 
         noundict = OrderedDict((nounlist[i], nounembed[i].cpu().data.numpy()) for i in range(300))
         verbdict = OrderedDict((verblist[i], verbembed[i].cpu().data.numpy()) for i in range(97))
+        actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(29100))
         nountoken = OrderedDict((nounlist[i], nountoken[i]) for i in range(300))
         verbtoken = OrderedDict((verblist[i], verbtoken[i]) for i in range(97))
+        actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(29100))
 
         del clipmodel
         torch.cuda.empty_cache()
         
-        return [nounlist, noundict, nountoken, verblist, verbdict, verbtoken]
+        return [nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken]
     
     elif dataset == 'diving-48':
         anno_path = os.path.join(data_path, 'class.csv')

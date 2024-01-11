@@ -17,10 +17,7 @@ from torch import Tensor
 import torch.nn as nn
 from torch.nn import functional as F
 import torch.distributed as dist
-try:
-    from torch._six import inf
-except:
-    from torch import inf
+from torch import inf
 import random
 import requests
 from typing import Dict
@@ -398,6 +395,7 @@ def load_bidir_weights(model, args):
             new_dict['clip_' + key] = checkpoint_clip[key]
     new_dict['clip_noun_proj'] = checkpoint_clip['proj']
     new_dict['clip_verb_proj'] = checkpoint_clip['proj']
+    new_dict['clip_ov_verb_proj'] = checkpoint_clip['proj']
             
     # load로 불러온 pre-trained weight를 new_dict에 담아주고
     checkpoint_model = new_dict

@@ -416,6 +416,9 @@ class STCrossTransformer(nn.Module):
                  verblist = None,
                  verbdict = None,
                  verbtoken = None,
+                 actionlist = None, 
+                 actiondict = None, 
+                 actiontoken = None,
                  device = None,
                  clip_model = 'ViT-B/16',
                  prefix = None,
@@ -438,8 +441,10 @@ class STCrossTransformer(nn.Module):
         self.verblist = verblist
         self.verbdict = verbdict
         self.verbtoken = verbtoken
+        self.actionlist = actionlist
+        self.actiondict = actiondict
+        self.actiontoken = actiontoken
         self.split_prompt = split_prompt
-        
         
         self.device = device
         self.clipmodel, _ = clip.load(clip_model, device=self.device, jit=False, return_intermediate_text_feature=0) 
@@ -487,6 +492,7 @@ class STCrossTransformer(nn.Module):
         if self.composition:
             self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
             self.clip_verb_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+            self.clip_ov_verb_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
             # self.head_verb = nn.Linear(embed_dim, text_dim)
             # self.head_verb_dropout = nn.Dropout(head_drop_rate)
             # self.head_noun = nn.Linear(embed_dim, text_dim)
@@ -649,10 +655,11 @@ class STCrossTransformer(nn.Module):
             # t_x = self.head_verb_dropout(t_x)
             # t_x = self.head_verb(t_x)
             s_x = s_x @ self.clip_noun_proj
+            ov_t_x = t_x @ self.clip_ov_verb_proj
             t_x = t_x @ self.clip_verb_proj
             
             
-            noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, t_x, embedding= 'noun')
+            noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, ov_t_x, embedding= 'noun')
             # verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, s_x, embedding= 'verb')
             # noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, embedding= 'noun')
             verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')
@@ -692,7 +699,7 @@ def ov_cast_base_patch16_224(pretrained=False, args=None, class_list=None, **kwa
 
 @register_model
 def compo_ov_cast_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    nounlist, noundict, nountoken, verblist, verbdict, verbtoken = class_list
+    nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken = class_list
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 

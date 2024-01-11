@@ -27,6 +27,7 @@ import models.bidir_modeling_crossattn
 import models.bidir_aim_modeling_crossattn
 import models.bidir_modeling_crossattn_concat
 import models.prompt_cast
+import models.both_cast
 import models.ov_cast
 import models.AIM
 from models.prompt import text_prompt
@@ -213,6 +214,8 @@ def get_args():
     parser.add_argument('--split_prompt', action='store_true', default=False)
     parser.add_argument('--ov', default=None, choices=['noun','verb','both'],
                         type=str, help='text_input')
+    parser.add_argument('--eval_result', action='store_true',
+                        help='Perform evaluation only')
     
     
     
@@ -461,10 +464,11 @@ def main(args, ds_init):
     
     if args.composition:
         from engine_for_prompt import train_one_epoch, validation_one_epoch, final_test, merge
+        # from engine_for_both_prompt import train_one_epoch, validation_one_epoch, final_test, merge
     else:
         from engine_for_prompt_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
     
-    if args.eval:
+    if args.eval or args.eval_result:
         if args.throughput:
             avg=speedup_one_epoch(args, data_loader_test,model,device)
             print('ave_forward_throughput is {:.4f}'.format(avg))
@@ -472,17 +476,28 @@ def main(args, ds_init):
             exit(0)
         else:
             preds_file = os.path.join(args.output_dir, str(global_rank) + '.txt')
-            test_stats = final_test(args, data_loader_test, model, device, preds_file,class_list=class_list)
+            if not args.eval_result:
+                test_stats = final_test(args, data_loader_test, model, device, preds_file,class_list=class_list)
             torch.distributed.barrier()
             if global_rank == 0:
                 print("Start merging results...")
                 if args.composition:
-                    final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb = merge(args.output_dir, num_tasks)
+                    final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb, pred_noun, pred_verb, label_noun, label_verb = merge(args.output_dir, num_tasks, return_result=True)
                     print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1_action:.2f}%, Top-5: {final_top5_action:.2f}%")
                     log_stats = {'Final Top-1 Action': final_top1_action,
                                 'Final Top-5 Action': final_top5_action,
                                 'Final Top-1 Noun': final_top1_noun,
                                 'Final Top-1 Verb': final_top1_verb}
+                    
+                    # ======== save prediction result ======== #
+                    import pandas as pd
+                    pred_noun = [class_list[0][i] for i in pred_noun]
+                    pred_verb = [class_list[3][i] for i in pred_verb]
+                    label_noun = [class_list[0][int(i)] for i in label_noun]
+                    label_verb = [class_list[3][int(i)] for i in label_verb]
+                    pred_df = pd.DataFrame({'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun})
+                    pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
+                    pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
                 else:
                     final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
                     print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
@@ -571,7 +586,7 @@ def main(args, ds_init):
     if global_rank == 0:
         print("Start merging results...")
         if args.composition:
-            final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb = merge(args.output_dir, num_tasks)
+            final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb, pred_noun, pred_verb, label_noun, label_verb = merge(args.output_dir, num_tasks, return_result=True)
             print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1 Action: {final_top1_action:.2f}%, Top-5 Action: {final_top5_action:.2f}%")
             log_stats = {'Final top-1 Action': final_top1_action,
                         'Final Top-5 Action': final_top5_action,
@@ -582,6 +597,16 @@ def main(args, ds_init):
             if args.output_dir and utils.is_main_process():
                 with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                     f.write(json.dumps(log_stats) + "\n")
+    
+            # ======== save prediction result ======== #
+            import pandas as pd
+            pred_noun = [class_list[0][i] for i in pred_noun]
+            pred_verb = [class_list[3][i] for i in pred_verb]
+            label_noun = [class_list[0][int(i)] for i in label_noun]
+            label_verb = [class_list[3][int(i)] for i in label_verb]
+            pred_df = pd.DataFrame({'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun})
+            pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
+            pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
         else:
             final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
             print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")

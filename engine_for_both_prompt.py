@@ -14,45 +14,22 @@ import random
 
 def composition_train_class_batch(model, samples, target_noun, target_verb, criterion,
                                   nounlist, verblist, actionlist, device):
-    featnorm = 1
-    randContrast = False
+    outputs_noun, outputs_verb = model(samples)
+    # _, pred_verb = outputs_verb.topk(1, 1, True, True)
+    uniqverb, verb_targets = torch.unique(target_verb, sorted=True, return_inverse=True)
+    action_list = []
+    for verb in uniqverb:
+        action_list += actionlist[verb*300 : (verb+1)*300]
+    nounFeature = model.text_encoder(action_list, opt='action')
+    nounFeature = nounFeature.view(-1, 300, 512)[verb_targets]
     
-    if randContrast:
-        nounContrast = 300 
-        verbContrast = 97
-         
-        # sample positive and negative
-        target_noun = [nounlist[i] for i in target_noun]
-        target_verb = [verblist[i] for i in target_verb]
-        noun_uniqname = np.unique(target_noun)
-        verb_uniqname = np.unique(target_verb)
-        noun_numNeg = nounContrast - len(noun_uniqname)
-        verb_numNeg = verbContrast - len(verb_uniqname)
-        noun_complement = list(set(nounlist) - set(noun_uniqname))
-        verb_complement = list(set(verblist) - set(verb_uniqname))
-        inp_nounlist = noun_uniqname.tolist() + random.sample(noun_complement, min(noun_numNeg, len(noun_complement)))
-        inp_verblist = verb_uniqname.tolist() + random.sample(verb_complement, min(verb_numNeg, len(verb_complement)))
-        noun_targets = torch.tensor([inp_nounlist.index(n) for n in target_noun]).to(device)
-        verb_targets = torch.tensor([inp_verblist.index(v) for v in target_verb]).to(device)
-    else:
-        noun_targets, verb_targets = target_noun, target_verb
-    
-    outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
-    if featnorm:
-        outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
-        outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
-        nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
-        verbFeature = verbFeature / verbFeature.norm(dim=-1, keepdim=True)
-        noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
-        verb_logits = outputs_verb @ verbFeature.t() / 0.07 if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1) / 0.07
-    else:
-        noun_logits = outputs_noun @ nounFeature.t() if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1)
-        verb_logits = outputs_verb @ verbFeature.t() if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1)
-        
-    loss_noun = criterion(noun_logits, noun_targets)
-    loss_verb = criterion(verb_logits, verb_targets)
+    outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
+    nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
+    noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
+    loss_noun = criterion(noun_logits, target_noun)
+    loss_verb = criterion(outputs_verb, target_verb)
     total_loss = loss_noun + loss_verb
-    return total_loss, loss_noun, loss_verb, noun_logits, verb_logits
+    return total_loss, loss_noun, loss_verb, noun_logits, outputs_verb
 
 
 
@@ -236,33 +213,25 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
         action_target = (target[:,1] * 1000) + target[:,0]
 
         # compute output
-        with torch.cuda.amp.autocast():
-            if idx == 0 or args.ov == 'both':
-                outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
-            elif args.ov == 'noun':
-                outputs_noun, outputs_verb, nounFeature, _ = model(samples, nounlist, verblist[:1])
-            elif args.ov == 'verb':
-                outputs_noun, outputs_verb, _, verbFeature = model(samples, nounlist[:1], verblist)
-            else:
-                outputs_noun, outputs_verb, _, _ = model(samples, nounlist[:1], verblist[:1])
-                
-            if featnorm:
-                outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
-                outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
-                nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
-                verbFeature = verbFeature / verbFeature.norm(dim=-1, keepdim=True)
-                noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
-                verb_logits = outputs_verb @ verbFeature.t() / 0.07 if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1) / 0.07
-            else:
-                noun_logits = outputs_noun @ nounFeature.t() if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1)
-                verb_logits = outputs_verb @ verbFeature.t() if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1)
-                
-            loss_noun = criterion(noun_logits, target[:,0])
-            loss_verb = criterion(verb_logits, target[:,1])
+        with torch.cuda.amp.autocast():  
+            outputs_noun, outputs_verb = model(samples)
+            _, pred_verb = outputs_verb.topk(1, 1, True, True)
+            uniqverb, verb_targets = torch.unique(pred_verb, sorted=True, return_inverse=True)
+            action_list = []
+            for verb in uniqverb:
+                action_list += actionlist[verb*300 : (verb+1)*300]
+            nounFeature = model.text_encoder(action_list, opt='action')
+            nounFeature = nounFeature.view(-1, 300, 512)[verb_targets].view(batch_size, -1, 512)
             
-        acc1_action, acc5_action = action_accuracy(noun_logits, verb_logits, action_target, topk=(1,5))
+            outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
+            nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
+            noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
+            loss_noun = criterion(noun_logits, target[:,0])
+            loss_verb = criterion(outputs_verb, target[:,1])
+            
+        acc1_action, acc5_action = action_accuracy(noun_logits, outputs_verb, action_target, topk=(1,5))
         acc1_noun, acc5_noun = accuracy(noun_logits, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(verb_logits, target[:,1], topk=(1, 5))
+        acc1_verb, acc5_verb = accuracy(outputs_verb, target[:,1], topk=(1, 5))
         
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())
@@ -311,43 +280,40 @@ def final_test(args, data_loader, model, device, file, class_list):
         action_target = (target[:,1] * 1000) + target[:,0]
         # compute output
         with torch.cuda.amp.autocast():
-            if idx == 0 or args.ov == 'both':
-                outputs_noun, outputs_verb, nounFeature, verbFeature = model(samples, nounlist, verblist)
-            elif args.ov == 'noun':
-                outputs_noun, outputs_verb, nounFeature, _ = model(samples, nounlist, verblist[:1])
-            elif args.ov == 'verb':
-                outputs_noun, outputs_verb, _, verbFeature = model(samples, nounlist[:1], verblist)
-            else:
-                outputs_noun, outputs_verb, _, _ = model(samples, nounlist[:1], verblist[:1])
-                
-            if featnorm:
-                outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
-                outputs_verb = outputs_verb / outputs_verb.norm(dim=-1, keepdim=True)
-                nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
-                verbFeature = verbFeature / verbFeature.norm(dim=-1, keepdim=True)
-                noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
-                verb_logits = outputs_verb @ verbFeature.t() / 0.07 if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1) / 0.07
-            else:
-                noun_logits = outputs_noun @ nounFeature.t() if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1)
-                verb_logits = outputs_verb @ verbFeature.t() if verbFeature.dim() == 2 else torch.bmm(verbFeature, outputs_verb.unsqueeze(-1)).squeeze(-1)
-                
+            outputs_noun, outputs_verb = model(samples)
+            _, pred_verb = outputs_verb.topk(1, 1, True, True)
+            uniqverb, verb_targets = torch.unique(pred_verb, sorted=True, return_inverse=True)
+            action_list = []
+            for verb in uniqverb:
+                action_list += actionlist[verb*300 : (verb+1)*300]
+            nounFeature = model.text_encoder(action_list, opt='action')
+            nounFeature = nounFeature.view(-1, 300, 512)[verb_targets].view(batch_size, -1, 512)
+            
+            outputs_noun = outputs_noun / outputs_noun.norm(dim=-1, keepdim=True)
+            nounFeature = nounFeature / nounFeature.norm(dim=-1, keepdim=True)
+            noun_logits = outputs_noun @ nounFeature.t() / 0.07 if nounFeature.dim() == 2 else torch.bmm(nounFeature, outputs_noun.unsqueeze(-1)).squeeze(-1) / 0.07
             loss_noun = criterion(noun_logits, target[:,0])
-            loss_verb = criterion(verb_logits, target[:,1])
+            loss_verb = criterion(outputs_verb, target[:,1])
 
         for i in range(outputs_noun.size(0)):
             string = "{} {} {} {} {} {} {} {}\n".format(ids[i], \
                                                 str(noun_logits.data[i].cpu().numpy().tolist()), \
-                                                str(verb_logits.data[i].cpu().numpy().tolist()), \
+                                                str(outputs_verb.data[i].cpu().numpy().tolist()), \
                                                 str(int(action_target[i].cpu().numpy())), \
                                                 str(int(target[i,0].cpu().numpy())), \
                                                 str(int(target[i,1].cpu().numpy())), \
                                                 str(int(chunk_nb[i].cpu().numpy())), \
                                                 str(int(split_nb[i].cpu().numpy())))
             final_result.append(string)
+        
+        target_noun = [nounlist[i] for i in target[:,0]]
+        target_verb = [verblist[i] for i in target[:,1]]
+        pred_noun = [nounlist[i] for i in noun_logits.argmax(dim=-1)]
+        pred_verb = [verblist[i] for i in outputs_verb.argmax(dim=-1)]
 
-        acc1_action, acc5_action = action_accuracy(noun_logits, verb_logits, action_target, topk=(1,5))
+        acc1_action, acc5_action = action_accuracy(noun_logits, outputs_verb, action_target, topk=(1,5))
         acc1_noun, acc5_noun = accuracy(noun_logits, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(verb_logits, target[:,1], topk=(1, 5))
+        acc1_verb, acc5_verb = accuracy(outputs_verb, target[:,1], topk=(1, 5))
 
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())
@@ -376,7 +342,7 @@ def final_test(args, data_loader, model, device, file, class_list):
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
-def merge(eval_path, num_tasks):
+def merge(eval_path, num_tasks, return_result = False):
     dict_feats_noun = {}
     dict_feats_verb = {}
     dict_label = {}
@@ -430,6 +396,12 @@ def merge(eval_path, num_tasks):
     top5_verb = [x[7] for x in ans]
     final_top1_noun ,final_top5_noun, final_top1_verb, final_top5_verb = np.mean(top1_noun), np.mean(top5_noun), np.mean(top1_verb), np.mean(top5_verb)
     final_top1_action, final_top5_action = np.mean(top1_action), np.mean(top5_action)
+    if return_result:
+        pred_noun = [x[0] for x in ans]
+        pred_verb = [x[1] for x in ans]
+        label_noun = [x[8] for x in ans]
+        label_verb = [x[9] for x in ans]
+        return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100, pred_noun, pred_verb, label_noun, label_verb
     return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100
 
 def compute_video(lst):
@@ -448,7 +420,7 @@ def compute_video(lst):
     top5_noun = (int(label_noun) in np.argsort(-feat_noun)[:5]) * 1.0
     top1_verb = (int(pred_verb) == int(label_verb)) * 1.0
     top5_verb = (int(label_verb) in np.argsort(-feat_verb)[:5]) * 1.0
-    return [pred_noun, pred_verb, top1_action, top5_action, top1_noun, top1_verb, top5_noun, top5_verb]
+    return [pred_noun, pred_verb, top1_action, top5_action, top1_noun, top1_verb, top5_noun, top5_verb, label_noun, label_verb]
 
 def action_accuracy(output_noun, output_verb, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""

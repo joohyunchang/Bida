@@ -217,6 +217,7 @@ def get_args():
     parser.add_argument('--eval_result', action='store_true',
                         help='Perform evaluation only')
     parser.add_argument('--kd', action='store_true', default=False)
+    parser.add_argument('--xlsx', action='store_true', default=False)
     
     
     
@@ -518,8 +519,29 @@ def main(args, ds_init):
                     pred_df = pd.DataFrame({'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun})
                     pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
                     pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+                    
+                    if args.xlsx:
+                        from openpyxl import Workbook
+                        from openpyxl.styles import PatternFill
+                        from openpyxl.utils.dataframe import dataframe_to_rows
+
+                        wb = Workbook()
+                        ws = wb.active
+
+                        # 데이터프레임을 엑셀 시트로 변환
+                        for r in dataframe_to_rows(pred_df, index=False, header=True):
+                            ws.append(r) 
+                            
+                        red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                        for row in ws.iter_rows(min_row=2, max_col=4, max_row=len(pred_df) + 1):
+                            if row[0].value != row[2].value:
+                                row[0].fill = red_fill
+                            if row[1].value != row[3].value:
+                                row[1].fill = red_fill
+                        wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
                 else:
                     final_top1 ,final_top5, pred, label = merge(args.output_dir, num_tasks, return_result=True)
+                    pred, label = torch.tensor(pred).to(args.device), torch.tensor(label).to(args.device)
                     pred_noun , pred_verb, label_noun, label_verb = pred % 300, pred // 300, label % 300, label // 300
                     top1_noun = pred_noun == label_noun
                     top1_verb = pred_verb == label_verb
@@ -529,8 +551,8 @@ def main(args, ds_init):
                     print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
                     log_stats = {'Final top-1': final_top1, 
                                 'Final Top-5': final_top5,
-                                'Final Top-1 Noun': final_top1_noun,
-                                'Final Top-1 Verb': final_top1_verb}
+                                'Final Top-1 Noun': final_top1_noun.tolist(),
+                                'Final Top-1 Verb': final_top1_verb.tolist()}
                     
                     # ======== save prediction result ======== #
                     import pandas as pd
@@ -541,6 +563,26 @@ def main(args, ds_init):
                     pred_df = pd.DataFrame({'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun})
                     pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
                     pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+                    
+                    if args.xlsx:
+                        from openpyxl import Workbook
+                        from openpyxl.styles import PatternFill
+                        from openpyxl.utils.dataframe import dataframe_to_rows
+
+                        wb = Workbook()
+                        ws = wb.active
+
+                        # 데이터프레임을 엑셀 시트로 변환
+                        for r in dataframe_to_rows(pred_df, index=False, header=True):
+                            ws.append(r) 
+                            
+                        red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                        for row in ws.iter_rows(min_row=2, max_col=4, max_row=len(pred_df) + 1):
+                            if row[0].value != row[2].value:
+                                row[0].fill = red_fill
+                            if row[1].value != row[3].value:
+                                row[1].fill = red_fill
+                        wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
                 if args.output_dir and utils.is_main_process():
                     with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                         f.write(json.dumps(log_stats) + "\n")
@@ -645,8 +687,29 @@ def main(args, ds_init):
             pred_df = pd.DataFrame({'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun})
             pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
             pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+            
+            if args.xlsx:
+                from openpyxl import Workbook
+                from openpyxl.styles import PatternFill
+                from openpyxl.utils.dataframe import dataframe_to_rows
+
+                wb = Workbook()
+                ws = wb.active
+
+                # 데이터프레임을 엑셀 시트로 변환
+                for r in dataframe_to_rows(pred_df, index=False, header=True):
+                    ws.append(r) 
+                    
+                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                for row in ws.iter_rows(min_row=2, max_col=4, max_row=len(pred_df) + 1):
+                    if row[0].value != row[2].value:
+                        row[0].fill = red_fill
+                    if row[1].value != row[3].value:
+                        row[1].fill = red_fill
+                wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
         else:
             final_top1 ,final_top5, pred, label = merge(args.output_dir, num_tasks, return_result=True)
+            pred, label = torch.tensor(pred).to(args.device), torch.tensor(label).to(args.device)
             pred_noun , pred_verb, label_noun, label_verb = pred % 300, pred // 300, label % 300, label // 300
             top1_noun = pred_noun == label_noun
             top1_verb = pred_verb == label_verb
@@ -670,6 +733,26 @@ def main(args, ds_init):
             pred_df = pd.DataFrame({'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun})
             pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
             pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+            
+            if args.xlsx:
+                from openpyxl import Workbook
+                from openpyxl.styles import PatternFill
+                from openpyxl.utils.dataframe import dataframe_to_rows
+
+                wb = Workbook()
+                ws = wb.active
+
+                # 데이터프레임을 엑셀 시트로 변환
+                for r in dataframe_to_rows(pred_df, index=False, header=True):
+                    ws.append(r) 
+                    
+                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                for row in ws.iter_rows(min_row=2, max_col=4, max_row=len(pred_df) + 1):
+                    if row[0].value != row[2].value:
+                        row[0].fill = red_fill
+                    if row[1].value != row[3].value:
+                        row[1].fill = red_fill
+                wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
     
 
     total_time = time.time() - start_time

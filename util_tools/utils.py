@@ -383,8 +383,8 @@ def load_bidir_weights(model, args):
             new_dict[key[8:]] = checkpoint_model[key]
         else:
             new_dict[key] = checkpoint_model[key]
-            
-    # add new code for load clip weight
+    
+    # add new code for load clip weight <blocks load, for Video Encoder>
     for key in clip_all_keys:
         if key.startswith('transformer.'):
             if key[23] == '.':
@@ -393,9 +393,21 @@ def load_bidir_weights(model, args):
                 new_dict['blocks.'+ key[22:24] + '.clip_' + key[25:]] = checkpoint_clip[key]
         else:
             new_dict['clip_' + key] = checkpoint_clip[key]
+    
     new_dict['clip_noun_proj'] = checkpoint_clip['proj']
     new_dict['clip_verb_proj'] = checkpoint_clip['proj']
     new_dict['clip_ov_verb_proj'] = checkpoint_clip['proj']
+    
+    # add new code for load clip weight <blocks load, for Text Encoder>
+    checkpoint_clip = clip_checkpoint.state_dict()
+    for key in checkpoint_clip:
+        if key.startswith('transformer.'):
+            if key[23] == '.':
+                new_dict['text_blocks.'+ key[22] + '.clip_text_' + key[24:]] = checkpoint_clip[key]
+            else : # layer10 ~ 11 process
+                new_dict['text_blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
+        elif not key.startswith('visual.'):
+            new_dict['clip_text_' + key] = checkpoint_clip[key]
             
     # load로 불러온 pre-trained weight를 new_dict에 담아주고
     checkpoint_model = new_dict
@@ -563,15 +575,29 @@ def laod_eval_weights(model, pre_trained_weight, args):
             del checkpoint_model[k]
     all_keys = list(checkpoint_model.keys())
     new_dict = OrderedDict()
-    for key in all_keys:
-        if key.startswith('backbone.'):
-            new_dict[key[9:]] = checkpoint_model[key]
-        elif key.startswith('encoder.'):
-            new_dict[key[8:]] = checkpoint_model[key]
-        elif key.startswith('module.'):
-            new_dict[key[7:]] = checkpoint_model[key]
-        else:
-            new_dict[key] = checkpoint_model[key]
+    if any(key.startswith('clipmodel.') for key in state_dict.keys()):
+        for key in all_keys:
+            if key.startswith('backbone.'):
+                new_dict[key[9:]] = checkpoint_model[key]
+            elif key.startswith('encoder.'):
+                new_dict[key[8:]] = checkpoint_model[key]
+            elif key.startswith('module.'):
+                new_dict[key[7:]] = checkpoint_model[key]
+            else:
+                new_dict[key] = checkpoint_model[key]
+    else:
+        for key in all_keys:
+            if key.startswith('clipmodel.'):
+                if key.startswith('clipmodel.transformer.'):
+                    if key[23] == '.':
+                        new_dict['text_blocks.'+ key[32] + '.clip_text_' + key[34:]] = checkpoint_model[key]
+                    else : # layer10 ~ 11 process
+                        new_dict['text_blocks.'+ key[32:34] + '.clip_text_' + key[35:]] = checkpoint_model[key]
+                elif not key.startswith('clipmodel.visual.'):
+                    new_dict['clip_text_' + key] = checkpoint_model[key]
+            else:
+                new_dict[key] = checkpoint_model[key]
+                
     checkpoint_model = new_dict
     if 'pos_embed' in checkpoint_model:
         pos_embed_checkpoint = checkpoint_model['pos_embed']

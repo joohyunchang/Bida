@@ -212,7 +212,8 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
         target = batch[1]
         videos = videos.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
-
+        textFeature = textdict
+        
         # compute output
         with torch.cuda.amp.autocast():
             outputs_video = model(videos)
@@ -325,10 +326,11 @@ def final_test(args,data_loader, model, device, file, class_list):
         split_nb = batch[4]
         videos = videos.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
+        textFeature = textdict
 
         # compute output
         with torch.cuda.amp.autocast():
-            outputs_video =  model(videos)
+            outputs_video = model(videos)
             if featnorm:
                 outputs_video = outputs_video / outputs_video.norm(dim=-1, keepdim=True)
                 textFeature = textFeature / textFeature.norm(dim=-1, keepdim=True)

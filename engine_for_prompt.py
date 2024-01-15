@@ -376,7 +376,7 @@ def final_test(args, data_loader, model, device, file, class_list):
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
-def merge(eval_path, num_tasks):
+def merge(eval_path, num_tasks, return_result = False):
     dict_feats_noun = {}
     dict_feats_verb = {}
     dict_label = {}
@@ -430,6 +430,12 @@ def merge(eval_path, num_tasks):
     top5_verb = [x[7] for x in ans]
     final_top1_noun ,final_top5_noun, final_top1_verb, final_top5_verb = np.mean(top1_noun), np.mean(top5_noun), np.mean(top1_verb), np.mean(top5_verb)
     final_top1_action, final_top5_action = np.mean(top1_action), np.mean(top5_action)
+    if return_result:
+        pred_noun = [x[0] for x in ans]
+        pred_verb = [x[1] for x in ans]
+        label_noun = [x[8] for x in ans]
+        label_verb = [x[9] for x in ans]
+        return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100, pred_noun, pred_verb, label_noun, label_verb
     return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100
 
 def compute_video(lst):
@@ -448,7 +454,7 @@ def compute_video(lst):
     top5_noun = (int(label_noun) in np.argsort(-feat_noun)[:5]) * 1.0
     top1_verb = (int(pred_verb) == int(label_verb)) * 1.0
     top5_verb = (int(label_verb) in np.argsort(-feat_verb)[:5]) * 1.0
-    return [pred_noun, pred_verb, top1_action, top5_action, top1_noun, top1_verb, top5_noun, top5_verb]
+    return [pred_noun, pred_verb, top1_action, top5_action, top1_noun, top1_verb, top5_noun, top5_verb, label_noun, label_verb]
 
 def action_accuracy(output_noun, output_verb, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""

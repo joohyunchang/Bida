@@ -422,14 +422,18 @@ def merge(eval_path, num_tasks, return_result = False):
     label = [x[3] for x in ans]
     final_top1 ,final_top5 = np.mean(top1), np.mean(top5)
     if return_result:
-        return final_top1*100 ,final_top5*100, pred, label
+        video_ids = [x[4] for x in ans]
+        confidence = [x[5] for x in ans]
+        return final_top1*100 ,final_top5*100, pred, label, video_ids, confidence
     return final_top1*100 ,final_top5*100
 
 def compute_video(lst):
     i, video_id, data, label = lst
+    video_ids = [x for x in video_id]
     feat = [x for x in data]
     feat = np.mean(feat, axis=0)
     pred = np.argmax(feat)
+    confidence = np.max(feat)
     top1 = (int(pred) == int(label)) * 1.0
     top5 = (int(label) in np.argsort(-feat)[:5]) * 1.0
-    return [pred, top1, top5, int(label)]
+    return [pred, top1, top5, int(label), video_ids, confidence]

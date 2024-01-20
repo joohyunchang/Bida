@@ -399,15 +399,27 @@ def load_bidir_weights(model, args):
     new_dict['clip_ov_verb_proj'] = checkpoint_clip['proj']
     
     # add new code for load clip weight <blocks load, for Text Encoder>
-    checkpoint_clip = clip_checkpoint.state_dict()
-    for key in checkpoint_clip:
-        if key.startswith('transformer.'):
-            if key[23] == '.':
-                new_dict['text_blocks.'+ key[22] + '.clip_text_' + key[24:]] = checkpoint_clip[key]
-            else : # layer10 ~ 11 process
-                new_dict['text_blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
-        elif not key.startswith('visual.'):
-            new_dict['clip_text_' + key] = checkpoint_clip[key]
+    if args.text_finetune is not None:
+        lavila = torch.load(args.text_finetune, map_location='cpu')
+        checkpoint_clip = lavila['state_dict']
+        for key in checkpoint_clip:
+            if key.startswith('module.transformer.'):
+                if key[23] == '.':
+                    new_dict['text_blocks.'+ key[29] + '.clip_text_' + key[31:]] = checkpoint_clip[key]
+                else : # layer10 ~ 11 process
+                    new_dict['text_blocks.'+ key[29:31] + '.clip_text_' + key[32:]] = checkpoint_clip[key]
+            elif not key.startswith('module.visual.'):
+                new_dict['clip_text_' + key] = checkpoint_clip[key]
+    else:
+        checkpoint_clip = clip_checkpoint.state_dict()
+        for key in checkpoint_clip:
+            if key.startswith('transformer.'):
+                if key[23] == '.':
+                    new_dict['text_blocks.'+ key[22] + '.clip_text_' + key[24:]] = checkpoint_clip[key]
+                else : # layer10 ~ 11 process
+                    new_dict['text_blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
+            elif not key.startswith('visual.'):
+                new_dict['clip_text_' + key] = checkpoint_clip[key]
             
     # load로 불러온 pre-trained weight를 new_dict에 담아주고
     checkpoint_model = new_dict

@@ -464,7 +464,7 @@ class STCrossTransformer(nn.Module):
         self.verbtoken = verbtoken
         self.split_prompt = split_prompt
         
-        
+        proj_dim = text_dim
         self.context_length = context_length
         if self.composition:
             self.noun_embedding = torch.nn.Embedding(context_length, self.text_dim)
@@ -476,7 +476,7 @@ class STCrossTransformer(nn.Module):
         self.clip_text_token_embedding = nn.Embedding(vocab_size, text_dim)
         self.clip_text_positional_embedding = nn.Parameter(torch.empty(self.context_length, text_dim))
         self.clip_text_ln_final = LayerNorm(text_dim)
-        self.clip_text_text_projection = nn.Parameter(torch.empty(text_dim, text_dim))
+        self.clip_text_text_projection = nn.Parameter(torch.empty(text_dim, proj_dim))
         
         self.text_blocks = nn.ModuleList([ResidualAttentionBlock(text_dim, text_num_heads) for _ in range(depth)])
         
@@ -517,8 +517,8 @@ class STCrossTransformer(nn.Module):
         
         # 768 to 512
         if self.composition:
-            self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
-            self.clip_verb_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+            self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, proj_dim))
+            self.clip_verb_proj = nn.Parameter(scale * torch.randn(embed_dim, proj_dim))
             # self.head_verb = nn.Linear(embed_dim, text_dim)
             # self.head_verb_dropout = nn.Dropout(head_drop_rate)
             # self.head_noun = nn.Linear(embed_dim, text_dim)
@@ -529,7 +529,7 @@ class STCrossTransformer(nn.Module):
             self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
             # self.head = nn.Linear(embed_dim, text_dim) if text_dim > 0 else nn.Identity()
             # self.head_dropout = nn.Dropout(head_drop_rate)
-            self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, text_dim))
+            self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, proj_dim))
 
         if use_learnable_pos_emb:
             trunc_normal_(self.pos_embed, std=.02)

@@ -435,17 +435,23 @@ def merge(eval_path, num_tasks, return_result = False):
         pred_verb = [x[1] for x in ans]
         label_noun = [x[8] for x in ans]
         label_verb = [x[9] for x in ans]
-        return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100, pred_noun, pred_verb, label_noun, label_verb
+        video_ids = [x[10] for x in ans]
+        conf_noun = [x[11] for x in ans]
+        conf_verb = [x[12] for x in ans]
+        return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100, pred_noun, pred_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb
     return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100
 
 def compute_video(lst):
     i, video_id, data_noun, data_verb, label, label_action = lst
+    video_ids = [x for x in video_id]
     feat_noun = [x for x in data_noun]
     feat_verb = [x for x in data_verb]
     feat_noun = np.mean(feat_noun, axis=0)
     feat_verb = np.mean(feat_verb, axis=0)
     pred_noun = np.argmax(feat_noun)
     pred_verb = np.argmax(feat_verb)
+    conf_noun = np.max(feat_noun)
+    conf_verb = np.max(feat_verb)
     pred_action = (pred_verb * 1000) + pred_noun
     label_noun, label_verb = label
     top1_action = (int(pred_action) == int(label_action)) * 1.0
@@ -454,7 +460,7 @@ def compute_video(lst):
     top5_noun = (int(label_noun) in np.argsort(-feat_noun)[:5]) * 1.0
     top1_verb = (int(pred_verb) == int(label_verb)) * 1.0
     top5_verb = (int(label_verb) in np.argsort(-feat_verb)[:5]) * 1.0
-    return [pred_noun, pred_verb, top1_action, top5_action, top1_noun, top1_verb, top5_noun, top5_verb, label_noun, label_verb]
+    return [pred_noun, pred_verb, top1_action, top5_action, top1_noun, top1_verb, top5_noun, top5_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb]
 
 def action_accuracy(output_noun, output_verb, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""

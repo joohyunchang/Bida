@@ -12,12 +12,25 @@ def convert_to_token(xh):
     return xh_id
 
 
-def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', device='cpu', useEncoder = False):
+def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', device='cpu', text_finetune=None, useEncoder = False):
     actionlist, actionprompt, actiontoken = [], {}, []
     numC = {'HMDB51-feature-30fps-center': 51,}
 
     # load the CLIP model
     clipmodel, _ = clip.load(clipbackbone, device=device, jit=False)
+    if text_finetune is not None:
+        import torch.nn as nn
+        clipmodel.text_projection = nn.Parameter(torch.zeros(512, 512//2))
+        clipmodel.image_projection = nn.Parameter(torch.zeros(768, 512//2))
+        lavila = torch.load(text_finetune, map_location='cpu')
+        lavila_checkpoint = lavila['state_dict']
+        new_dict = clipmodel.state_dict()
+        for key in lavila_checkpoint: #allkeys들은 모두 module.으로 시작한다. visual부분을 빼기위해서 
+            if not key.startswith('module.visual'):
+                new_dict[key[7:]] = lavila_checkpoint[key]
+        # load로 불러온 pre-trained weight를 new_dict에 담아주고
+        clipmodel.load_state_dict(new_dict)
+        clipmodel.to(device)
     for paramclip in clipmodel.parameters():
         paramclip.requires_grad = False
     clipmodel.eval()

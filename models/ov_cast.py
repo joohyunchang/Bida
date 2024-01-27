@@ -655,9 +655,9 @@ class STCrossTransformer(nn.Module):
         if videofeature is not None:
             B = videofeature.shape[0] # Batch size
             if embedding == 'noun':
-                text_embedding = (self.noun_embedding(torch.arange(77).to(self.noun_embedding.weight.device))[None, :].repeat([B,1,1]) + videofeature.unsqueeze(1).repeat(1, 77, 1)).unsqueeze(1).repeat([1 ,len(actionlist), 1, 1])
+                text_embedding = (self.noun_embedding(torch.arange(77).to(self.noun_embedding.weight.device))[None, :].expand([B,-1,-1]) + videofeature.unsqueeze(1).expand(-1, 77, -1)).unsqueeze(1).repeat([1, len(actionlist), 1, 1])
             else:
-                text_embedding = (self.verb_embedding(torch.arange(77).to(self.verb_embedding.weight.device))[None, :].repeat([B,1,1]) + videofeature.unsqueeze(1).repeat(1, 77, 1)).unsqueeze(1).repeat([1, len(actionlist), 1, 1])
+                text_embedding = (self.verb_embedding(torch.arange(77).to(self.verb_embedding.weight.device))[None, :].expand([B,-1,-1]) + videofeature.unsqueeze(1).expand(-1, 77, -1)).unsqueeze(1).repeat([1, len(actionlist), 1, 1])
             prompt_texttoken = torch.zeros(len(actionlist), 77).unsqueeze(0).repeat(B,1,1)
             
             for i, a in enumerate(actionlist):

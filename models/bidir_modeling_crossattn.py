@@ -519,6 +519,7 @@ class STCrossTransformer(nn.Module):
     def forward_features(self, x):
         B = x.shape[0]
         s_x = x[:, :, 1::2, :, :] # pick even frames
+        # s_x = torch.randn_like(x[:, :, 1::2, :, :]) # pick even frames
         ######################## AIM spatial path #########################
         s_t = s_x.shape[2]
         s_x = rearrange(s_x, 'b c t h w -> (b t) c h w')
@@ -532,6 +533,7 @@ class STCrossTransformer(nn.Module):
         
         ######################## VMAE spatial path #########################
         t_x = self.patch_embed(x)
+        # t_x = self.patch_embed(torch.randn_like(x))
 
         if self.pos_embed is not None:
             t_x = t_x + self.pos_embed.expand(B, -1, -1).type_as(t_x).to(t_x.device).clone().detach()

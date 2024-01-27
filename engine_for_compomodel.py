@@ -11,8 +11,12 @@ from scipy.special import softmax
 from einops import rearrange
 
 
-def composition_train_class_batch(model, samples, target_noun, target_verb, criterion):
-    outputs_noun, outputs_verb = model(samples)
+def composition_train_class_batch(model, samples, target_noun, target_verb, criterion, actionlist=None, captions=None):
+    if actionlist is not None:
+        captions = [actionlist[300*v.argmax()+n.argmax()] for n, v in zip(target_noun, target_verb)]
+        outputs_noun, outputs_verb = model(samples, captions)
+    else:
+        outputs_noun, outputs_verb = model(samples)
     loss_noun = criterion(outputs_noun, target_noun)
     loss_verb = criterion(outputs_verb, target_verb)
     total_loss = loss_noun + loss_verb
@@ -30,13 +34,21 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None, log_writer=None,
                     start_steps=None, lr_schedule_values=None, wd_schedule_values=None,
-                    num_training_steps_per_epoch=None, update_freq=None):
+                    num_training_steps_per_epoch=None, update_freq=None, class_list=None):
     model.train(True)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('acc1_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    metric_logger.add_meter('acc1_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    metric_logger.add_meter('acc5_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    metric_logger.add_meter('acc5_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}')) 
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 10
+    print_freq = 20
+    
+    # prompt setting
+    actionlist = None
+    nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken = class_list
 
     if loss_scaler is None:
         model.zero_grad()
@@ -58,6 +70,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
 
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        batch_size = samples.shape[0]
 
         if mixup_fn is not None:
             samples, target_noun, target_verb = mixup_fn(samples, targets)
@@ -65,13 +78,16 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         if loss_scaler is None:
             samples = samples.half()
             loss, loss_noun, loss_verb, outputs_noun, outputs_verb = composition_train_class_batch(
-                model, samples, target_noun, target_verb, criterion)
+                model, samples, target_noun, target_verb, criterion, actionlist=actionlist)
         else:
             with torch.cuda.amp.autocast():
                 samples = samples.half()
                 loss, outputs_noun, outpus_verb = composition_train_class_batch(
                     model, samples, target_noun, target_verb, criterion)
         loss_value = loss.item()   
+
+        top1_noun_acc, top5_noun_acc = accuracy(outputs_noun, targets[:,0], topk=(1, 5))
+        top1_verb_acc, top5_verb_acc = accuracy(outputs_verb, targets[:,1], topk=(1, 5))
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -128,7 +144,15 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                 weight_decay_value = group["weight_decay"]
         metric_logger.update(weight_decay=weight_decay_value)
         metric_logger.update(grad_norm=grad_norm)
-
+        metric_logger.update(acc1_noun=top1_noun_acc.item())
+        metric_logger.update(acc1_verb=top1_verb_acc.item())
+        metric_logger.update(acc5_noun=top5_noun_acc.item())
+        metric_logger.update(acc5_verb=top5_verb_acc.item())
+        metric_logger.meters['acc1_noun'].update(top1_noun_acc.item(), n=batch_size)
+        metric_logger.meters['acc1_verb'].update(top1_verb_acc.item(), n=batch_size)
+        metric_logger.meters['acc5_noun'].update(top5_noun_acc.item(), n=batch_size)
+        metric_logger.meters['acc5_verb'].update(top5_verb_acc.item(), n=batch_size)
+        
         if log_writer is not None:
             log_writer.update(loss=loss_value, head="loss")
             log_writer.update(class_acc=class_acc, head="loss")
@@ -155,8 +179,7 @@ def validation_one_epoch(args, data_loader, model, device):
 
     # switch to evaluation mode
     model.eval()
-
-    for batch in metric_logger.log_every(data_loader, 10, header):
+    for idx, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
         samples = batch[0]
         target = batch[1]
         batch_size = samples.shape[0]
@@ -166,7 +189,9 @@ def validation_one_epoch(args, data_loader, model, device):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output_noun, output_verb = model(samples)
+            # captions = None
+            captions = [""]*batch_size
+            output_noun, output_verb = model(samples, captions)
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])
             
@@ -205,7 +230,7 @@ def final_test(args, data_loader, model, device, file):
     model.eval()
     final_result = []
     
-    for batch in metric_logger.log_every(data_loader, 10, header):
+    for idx, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
         samples = batch[0]
         target = batch[1]
         ids = batch[2]
@@ -215,10 +240,12 @@ def final_test(args, data_loader, model, device, file):
         samples = samples.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
         action_target = (target[:,1] * 1000) + target[:,0]
-
+        
         # compute output
         with torch.cuda.amp.autocast():
-            output_noun, output_verb = model(samples)
+            # captions = "None"
+            captions = [""]*batch_size
+            output_noun, output_verb = model(samples, captions)
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])
 
@@ -264,7 +291,7 @@ def final_test(args, data_loader, model, device, file):
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
-def merge(eval_path, num_tasks):
+def merge(eval_path, num_tasks, return_result = False):
     dict_feats_noun = {}
     dict_feats_verb = {}
     dict_label = {}
@@ -318,16 +345,28 @@ def merge(eval_path, num_tasks):
     top5_verb = [x[7] for x in ans]
     final_top1_noun ,final_top5_noun, final_top1_verb, final_top5_verb = np.mean(top1_noun), np.mean(top5_noun), np.mean(top1_verb), np.mean(top5_verb)
     final_top1_action, final_top5_action = np.mean(top1_action), np.mean(top5_action)
+    if return_result:
+        pred_noun = [x[0] for x in ans]
+        pred_verb = [x[1] for x in ans]
+        label_noun = [x[8] for x in ans]
+        label_verb = [x[9] for x in ans]
+        video_ids = [x[10] for x in ans]
+        conf_noun = [x[11] for x in ans]
+        conf_verb = [x[12] for x in ans]
+        return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100, pred_noun, pred_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb
     return final_top1_action*100, final_top5_action*100, final_top1_noun*100 ,final_top5_noun*100, final_top1_verb*100, final_top5_verb*100
 
 def compute_video(lst):
     i, video_id, data_noun, data_verb, label, label_action = lst
+    video_ids = [x for x in video_id]
     feat_noun = [x for x in data_noun]
     feat_verb = [x for x in data_verb]
     feat_noun = np.mean(feat_noun, axis=0)
     feat_verb = np.mean(feat_verb, axis=0)
     pred_noun = np.argmax(feat_noun)
     pred_verb = np.argmax(feat_verb)
+    conf_noun = np.max(feat_noun)
+    conf_verb = np.max(feat_verb)
     pred_action = (pred_verb * 1000) + pred_noun
     label_noun, label_verb = label
     top1_action = (int(pred_action) == int(label_action)) * 1.0
@@ -336,7 +375,7 @@ def compute_video(lst):
     top5_noun = (int(label_noun) in np.argsort(-feat_noun)[:5]) * 1.0
     top1_verb = (int(pred_verb) == int(label_verb)) * 1.0
     top5_verb = (int(label_verb) in np.argsort(-feat_verb)[:5]) * 1.0
-    return [pred_noun, pred_verb, top1_action, top5_action, top1_noun, top1_verb, top5_noun, top5_verb]
+    return [pred_noun, pred_verb, top1_action, top5_action, top1_noun, top1_verb, top5_noun, top5_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb]
 
 def action_accuracy(output_noun, output_verb, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""

@@ -420,6 +420,11 @@ def load_bidir_weights(model, args):
                     new_dict['text_blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
             elif not key.startswith('visual.'):
                 new_dict['clip_text_' + key] = checkpoint_clip[key]
+                
+    if args.prompt_weight is not None:
+        prompt = torch.load(args.prompt_weight, map_location='cpu')
+        keys = prompt['module']
+        new_dict['prompt_embedding.weight'] = keys['prompt_embedding.weight']
             
     # load로 불러온 pre-trained weight를 new_dict에 담아주고
     checkpoint_model = new_dict

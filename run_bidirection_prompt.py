@@ -218,8 +218,10 @@ def get_args():
                         help='Perform evaluation only')
     parser.add_argument('--kd', action='store_true', default=False)
     parser.add_argument('--xlsx', action='store_true', default=False)
-    parser.add_argument('--text_finetune',default='None', help='finetune from clip checkpoint')
+    parser.add_argument('--text_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--text_dim',default=512, type=int, help='text dim set')
+    parser.add_argument('--both', action='store_true', default=False)
+    parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
     
     
     
@@ -490,8 +492,10 @@ def main(args, ds_init):
         optimizer=optimizer, loss_scaler=loss_scaler, model_ema=model_ema)
     
     if args.composition:
-        from engine_for_prompt import train_one_epoch, validation_one_epoch, final_test, merge
-        # from engine_for_both_prompt import train_one_epoch, validation_one_epoch, final_test, merge
+        if args.both:
+            from engine_for_both_prompt import train_one_epoch, validation_one_epoch, final_test, merge
+        else:
+            from engine_for_prompt import train_one_epoch, validation_one_epoch, final_test, merge
     else:
         from engine_for_prompt_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
     
@@ -529,7 +533,7 @@ def main(args, ds_init):
                     label_verb = [class_list[3][int(i)] for i in label_verb]
                     pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf_verb':conf_verb, 'conf_noun':conf_noun})
                     pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
-                    pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']*100).round(2), (pred_df['conf_noun']*100).round(2)
+                    pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']).round(4), (pred_df['conf_noun']).round(4)
                     pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
                     
                     if args.xlsx:
@@ -578,7 +582,7 @@ def main(args, ds_init):
                     label_verb = [class_list[3][int(i)] for i in label_verb]
                     pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'confidence':conf})
                     pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
-                    pred_df['confidence'] = (pred_df['confidence']*100).round(2)
+                    pred_df['confidence'] = (pred_df['confidence']).round(4)
                     pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
                     
                     if args.xlsx:
@@ -594,11 +598,13 @@ def main(args, ds_init):
                             ws.append(r) 
                             
                         red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
-                        for row in ws.iter_rows(min_row=2, max_col=4, max_row=len(pred_df) + 1):
-                            if row[0].value != row[2].value:
-                                row[0].fill = red_fill
+                        for row in ws.iter_rows(min_row=2, max_col=6, max_row=len(pred_df) + 1):
                             if row[1].value != row[3].value:
                                 row[1].fill = red_fill
+                                row[5].fill = red_fill
+                            if row[2].value != row[4].value:
+                                row[2].fill = red_fill
+                                row[5].fill = red_fill
                         wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
                 if args.output_dir and utils.is_main_process():
                     with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
@@ -706,7 +712,7 @@ def main(args, ds_init):
             label_verb = [class_list[3][int(i)] for i in label_verb]
             pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf_verb':conf_verb, 'conf_noun':conf_noun})
             pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
-            pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']*100).round(2), (pred_df['conf_noun']*100).round(2)
+            pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']).round(4), (pred_df['conf_noun']).round(4)
             pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
             
             if args.xlsx:
@@ -755,9 +761,9 @@ def main(args, ds_init):
             pred_verb = [class_list[3][i] for i in pred_verb]
             label_noun = [class_list[0][int(i)] for i in label_noun]
             label_verb = [class_list[3][int(i)] for i in label_verb]
-            pred_df = pd.DataFrame({'video_ids':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'confidence':conf})
+            pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'confidence':conf})
             pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
-            pred_df['confidence'] = (pred_df['confidence']*100).round(2)
+            pred_df['confidence'] = (pred_df['confidence']).round(4)
             pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
             
             if args.xlsx:

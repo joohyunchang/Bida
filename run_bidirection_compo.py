@@ -26,8 +26,8 @@ import models.bidir_modeling_after_crossattn
 import models.bidir_modeling_crossattn
 import models.bidir_aim_modeling_crossattn
 import models.bidir_modeling_crossattn_concat
-import models.AIM
-
+import models.cast_square
+from models.prompt import text_prompt
 
 
 def get_args():
@@ -193,6 +193,7 @@ def get_args():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--local_rank', type=int)
+    parser.add_argument('--local-rank', type=int)
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
@@ -206,6 +207,12 @@ def get_args():
     parser.add_argument('--fusion_method', default='add', choices=['add','mul','concat','weight'],
                         type=str, help='fusion_method')
     parser.add_argument('--throughput', action='store_true', dest='throughput')
+    parser.add_argument('--eval_result', action='store_true', default=False,
+                        help='Perform evaluation only')
+    parser.add_argument('--xlsx', action='store_true', default=False)
+    parser.add_argument('--text_finetune',default=None, help='finetune from clip checkpoint')
+    parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
+    
     
     
     
@@ -327,6 +334,7 @@ def main(args, ds_init):
     args.window_size = 16
     args.patch_size = patch_size
     
+    class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=args.device)
     
     model = create_model(
           args.vmae_model,
@@ -443,7 +451,8 @@ def main(args, ds_init):
         criterion = torch.nn.CrossEntropyLoss()
 
     print("criterion = %s" % str(criterion))
-
+    print('number of params:', n_parameters)
+    
     utils.auto_load_model(
         args=args, model=model, model_without_ddp=model_without_ddp,
         optimizer=optimizer, loss_scaler=loss_scaler, model_ema=model_ema)
@@ -453,7 +462,7 @@ def main(args, ds_init):
     else:
         from engine_for_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
     
-    if args.eval:
+    if args.eval or args.eval_result:
         if args.throughput:
             avg=speedup_one_epoch(args, data_loader_test,model,device)
             print('ave_forward_throughput is {:.4f}'.format(avg))
@@ -461,17 +470,56 @@ def main(args, ds_init):
             exit(0)
         else:
             preds_file = os.path.join(args.output_dir, str(global_rank) + '.txt')
-            test_stats = final_test(args, data_loader_test, model, device, preds_file)
+            if not args.eval_result:
+                test_stats = final_test(args, data_loader_test, model, device, preds_file)
             torch.distributed.barrier()
             if global_rank == 0:
                 print("Start merging results...")
                 if args.composition:
-                    final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb = merge(args.output_dir, num_tasks)
+                    final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb, pred_noun, pred_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb = merge(args.output_dir, num_tasks, return_result=True)
                     print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1_action:.2f}%, Top-5: {final_top5_action:.2f}%")
                     log_stats = {'Final Top-1 Action': final_top1_action,
                                 'Final Top-5 Action': final_top5_action,
                                 'Final Top-1 Noun': final_top1_noun,
-                                'Final Top-1 Verb': final_top1_verb}
+                                'Final Top-1 Verb': final_top1_verb,
+                                'Final Top-5 Noun': final_top5_noun,
+                                'Final Top-5 Verb': final_top5_verb,
+                                'confidences_noun': np.array(conf_noun).mean(),
+                                'confidences_verb': np.array(conf_verb).mean()}
+                    
+                    # ======== save prediction result ======== #
+                    import pandas as pd
+                    video_ids = [''.join(x).replace(' ','') for x in video_ids]
+                    pred_noun = [class_list[0][i] for i in pred_noun]
+                    pred_verb = [class_list[3][i] for i in pred_verb]
+                    label_noun = [class_list[0][int(i)] for i in label_noun]
+                    label_verb = [class_list[3][int(i)] for i in label_verb]
+                    pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf_verb':conf_verb, 'conf_noun':conf_noun})
+                    pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
+                    pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']).round(4), (pred_df['conf_noun']).round(4)
+                    pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+                    
+                    if args.xlsx:
+                        from openpyxl import Workbook
+                        from openpyxl.styles import PatternFill
+                        from openpyxl.utils.dataframe import dataframe_to_rows
+
+                        wb = Workbook()
+                        ws = wb.active
+
+                        # 데이터프레임을 엑셀 시트로 변환
+                        for r in dataframe_to_rows(pred_df, index=False, header=True):
+                            ws.append(r) 
+                            
+                        red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                        for row in ws.iter_rows(min_row=2, max_col=7, max_row=len(pred_df) + 1):
+                            if row[1].value != row[3].value:
+                                row[1].fill = red_fill
+                                row[5].fill = red_fill
+                            if row[2].value != row[4].value:
+                                row[2].fill = red_fill
+                                row[6].fill = red_fill
+                        wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
                 else:
                     print("Start merging results...")
                     final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
@@ -498,7 +546,7 @@ def main(args, ds_init):
             device, epoch, loss_scaler, args.clip_grad, model_ema, mixup_fn,
             log_writer=log_writer, start_steps=epoch * num_training_steps_per_epoch,
             lr_schedule_values=lr_schedule_values, wd_schedule_values=wd_schedule_values,
-            num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq,
+            num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq, class_list=class_list
         )
         torch.cuda.empty_cache()
         if args.output_dir and args.save_ckpt:
@@ -561,17 +609,53 @@ def main(args, ds_init):
     if global_rank == 0:
         print("Start merging results...")
         if args.composition:
-            final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb = merge(args.output_dir, num_tasks)
+            final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb, pred_noun, pred_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb = merge(args.output_dir, num_tasks, return_result=True)
             print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1 Action: {final_top1_action:.2f}%, Top-5 Action: {final_top5_action:.2f}%")
             log_stats = {'Final top-1 Action': final_top1_action,
                         'Final Top-5 Action': final_top5_action,
                         'Final Top-1 Noun': final_top1_noun,
                         'Final Top-1 Verb': final_top1_verb,
                         'Final Top-5 Noun': final_top5_noun,
-                        'Final Top-5 Verb': final_top5_verb}
+                        'Final Top-5 Verb': final_top5_verb,
+                        'confidences_noun': np.array(conf_noun).mean(),
+                        'confidences_verb': np.array(conf_verb).mean()}
             if args.output_dir and utils.is_main_process():
                 with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                     f.write(json.dumps(log_stats) + "\n")
+    
+            # ======== save prediction result ======== #
+            import pandas as pd
+            video_ids = [''.join(x).replace(' ','') for x in video_ids]
+            pred_noun = [class_list[0][i] for i in pred_noun]
+            pred_verb = [class_list[3][i] for i in pred_verb]
+            label_noun = [class_list[0][int(i)] for i in label_noun]
+            label_verb = [class_list[3][int(i)] for i in label_verb]
+            pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf_verb':conf_verb, 'conf_noun':conf_noun})
+            pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
+            pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']).round(4), (pred_df['conf_noun']).round(4)
+            pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+            
+            if args.xlsx:
+                from openpyxl import Workbook
+                from openpyxl.styles import PatternFill
+                from openpyxl.utils.dataframe import dataframe_to_rows
+
+                wb = Workbook()
+                ws = wb.active
+
+                # 데이터프레임을 엑셀 시트로 변환
+                for r in dataframe_to_rows(pred_df, index=False, header=True):
+                    ws.append(r) 
+                    
+                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                for row in ws.iter_rows(min_row=2, max_col=7, max_row=len(pred_df) + 1):
+                    if row[1].value != row[3].value:
+                        row[1].fill = red_fill
+                        row[5].fill = red_fill
+                    if row[2].value != row[4].value:
+                        row[2].fill = red_fill
+                        row[6].fill = red_fill
+                wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
         else:
             final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
             print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")

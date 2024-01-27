@@ -649,26 +649,48 @@ class STCrossTransformer(nn.Module):
         
         return x
 
-    def replace_text_embedding(self, actionlist, actiondict, actiontoken, embedding = 'noun'):
-        if embedding == 'noun':
-            text_embedding = self.noun_embedding(torch.arange(77).to(self.noun_embedding.weight.device))[None, :].repeat([len(actionlist), 1, 1])
+    def replace_text_embedding(self, actionlist, actiondict, actiontoken, videofeature = None, embedding = 'noun'):
+        if videofeature is not None:
+            B = videofeature.shape[0] # Batch size
+            if embedding == 'noun':
+                text_embedding = (self.noun_embedding(torch.arange(77).to(self.noun_embedding.weight.device))[None, :].expand([B,-1,-1]) + videofeature.unsqueeze(1).expand(-1, 77, -1)).unsqueeze(1).repeat([1, len(actionlist), 1, 1])
+            else:
+                text_embedding = (self.verb_embedding(torch.arange(77).to(self.verb_embedding.weight.device))[None, :].expand([B,-1,-1]) + videofeature.unsqueeze(1).expand(-1, 77, -1)).unsqueeze(1).repeat([1, len(actionlist), 1, 1])
+            prompt_texttoken = torch.zeros(len(actionlist), 77).unsqueeze(0).repeat(B,1,1)
+            
+            for i, a in enumerate(actionlist):
+                embedding = torch.from_numpy(actiondict[a][0]).float().to(self.verb_embedding.weight.device)
+                token = torch.from_numpy(actiontoken[a][0])
+                text_embedding[:,i,0] = embedding[0]
+                ind = np.argmax(token, -1)
+
+                text_embedding[:, i , self.prefix + 1: self.prefix + ind] = embedding[1:ind]
+                text_embedding[:, i, self.prefix + ind + self.postfix] = embedding[ind]
+
+                prompt_texttoken[:, i, 0] = token[0]
+                prompt_texttoken[:, i, self.prefix + 1: self.prefix + ind] = token[1:ind]
+                prompt_texttoken[:, i, self.prefix + ind + self.postfix] = token[ind]
+            return text_embedding, prompt_texttoken
         else:
-            text_embedding = self.verb_embedding(torch.arange(77).to(self.verb_embedding.weight.device))[None, :].repeat([len(actionlist), 1, 1])
-        prompt_texttoken = torch.zeros(len(actionlist), 77)
-        
-        for i, a in enumerate(actionlist):
-            embedding = torch.from_numpy(actiondict[a][0]).float().to(self.noun_embedding.weight.device)
-            token = torch.from_numpy(actiontoken[a][0])
-            text_embedding[i][0] = embedding[0]
-            ind = np.argmax(token, -1)
+            if embedding == 'noun':
+                text_embedding = self.noun_embedding(torch.arange(77).to(self.noun_embedding.weight.device))[None, :].repeat([len(actionlist), 1, 1])
+            else:
+                text_embedding = self.verb_embedding(torch.arange(77).to(self.verb_embedding.weight.device))[None, :].repeat([len(actionlist), 1, 1])
+            prompt_texttoken = torch.zeros(len(actionlist), 77)
+            
+            for i, a in enumerate(actionlist):
+                embedding = torch.from_numpy(actiondict[a][0]).float().to(self.noun_embedding.weight.device)
+                token = torch.from_numpy(actiontoken[a][0])
+                text_embedding[i][0] = embedding[0]
+                ind = np.argmax(token, -1)
 
-            text_embedding[i][self.prefix + 1: self.prefix + ind] = embedding[1:ind]
-            text_embedding[i][self.prefix + ind + self.postfix] = embedding[ind]
+                text_embedding[i][self.prefix + 1: self.prefix + ind] = embedding[1:ind]
+                text_embedding[i][self.prefix + ind + self.postfix] = embedding[ind]
 
-            prompt_texttoken[i][0] = token[0]
-            prompt_texttoken[i][self.prefix + 1: self.prefix + ind] = token[1:ind]
-            prompt_texttoken[i][self.prefix + ind + self.postfix] = token[ind]
-        return text_embedding, prompt_texttoken
+                prompt_texttoken[i][0] = token[0]
+                prompt_texttoken[i][self.prefix + 1: self.prefix + ind] = token[1:ind]
+                prompt_texttoken[i][self.prefix + ind + self.postfix] = token[ind]
+            return text_embedding, prompt_texttoken
     
     def text_encoder(self, inp_list, opt='noun'):
         if opt == 'noun':

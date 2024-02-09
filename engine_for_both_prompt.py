@@ -295,6 +295,33 @@ def final_test(args, data_loader, model, device, file, class_list):
             loss_noun = criterion(noun_logits, target[:,0])
             loss_verb = criterion(outputs_verb, target[:,1])
 
+            final_result.append(string)
+        
+        # target_noun = [nounlist[i] for i in target[:,0]]
+        # target_verb = [verblist[i] for i in target[:,1]]
+        # pred_noun = [nounlist[i%len(nounlist)] for i in noun_logits.argmax(dim=-1)]
+        # pred_verb = [verblist[i] for i in outputs_verb.argmax(dim=-1)]
+
+        if len(nounlist) != noun_logits.shape[-1]:
+            _, pred_actions = noun_logits.topk(1,1,True,True)
+            # pred_action = pred_action.squeeze(1)
+            pred_nouns = pred_actions % 300
+            verb_target = (pred_actions // 300)
+            pred_verbs = pred_verb[torch.arange(pred_verb.size(0)), verb_target.squeeze(1)].unsqueeze(1)
+            pred_actions = (pred_verbs * 300) + pred_nouns
+            correct_actions = pred_actions.eq(target[:,2].reshape(-1, 1).expand_as(pred_actions))
+            acc1_action = correct_actions.reshape(-1).float().sum(0) * 100. / batch_size
+            correct_nouns = pred_nouns.eq(target[:,0].reshape(-1, 1).expand_as(pred_nouns))
+            acc1_noun = correct_nouns.reshape(-1).float().sum(0) * 100. / batch_size
+            correct_verbs = pred_verbs.eq(target[:,1].reshape(-1, 1).expand_as(pred_verbs))
+            acc1_verb = correct_verbs.reshape(-1).float().sum(0) * 100. / batch_size    
+            acc5_noun, acc5_verb = torch.tensor(-1), torch.tensor(-1)   
+            
+        else:
+            acc1_action, acc5_action = action_accuracy(noun_logits, outputs_verb, action_target, topk=(1,5))
+            acc1_noun, acc5_noun = accuracy(noun_logits, target[:,0], topk=(1, 5))
+            acc1_verb, acc5_verb = accuracy(outputs_verb, target[:,1], topk=(1, 5))
+
         for i in range(outputs_noun.size(0)):
             string = "{} {} {} {} {} {} {} {}\n".format(ids[i], \
                                                 str(noun_logits.data[i].cpu().numpy().tolist()), \
@@ -304,17 +331,7 @@ def final_test(args, data_loader, model, device, file, class_list):
                                                 str(int(target[i,1].cpu().numpy())), \
                                                 str(int(chunk_nb[i].cpu().numpy())), \
                                                 str(int(split_nb[i].cpu().numpy())))
-            final_result.append(string)
-        
-        target_noun = [nounlist[i] for i in target[:,0]]
-        target_verb = [verblist[i] for i in target[:,1]]
-        pred_noun = [nounlist[i] for i in noun_logits.argmax(dim=-1)]
-        pred_verb = [verblist[i] for i in outputs_verb.argmax(dim=-1)]
-
-        acc1_action, acc5_action = action_accuracy(noun_logits, outputs_verb, action_target, topk=(1,5))
-        acc1_noun, acc5_noun = accuracy(noun_logits, target[:,0], topk=(1, 5))
-        acc1_verb, acc5_verb = accuracy(outputs_verb, target[:,1], topk=(1, 5))
-
+            
         metric_logger.update(loss_noun=loss_noun.item())
         metric_logger.update(loss_verb=loss_verb.item())
         metric_logger.update(acc1_action=acc1_action.item())
@@ -420,7 +437,7 @@ def compute_video(lst):
     conf_verb = np.max(feat_verb)
     label_noun, label_verb = label
     # conf_corr_noun = feat_noun[int(label_noun)]
-    # conf_corr_verb = feat_verb[int(label_verb)]
+    # conf_corr_verb = feat_verb[int(label_verb)] 
     pred_action = (pred_verb * 1000) + pred_noun
     top1_action = (int(pred_action) == int(label_action)) * 1.0
     top5_action = (int(label_noun) in np.argsort(-feat_noun)[:5] and int(label_verb) in np.argsort(-feat_verb)[:5]) * 1.0

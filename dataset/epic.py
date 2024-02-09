@@ -45,6 +45,8 @@ class EpicVideoClsDataset(Dataset):
           verb_label_array = list(cleaned.values[:, 1]) # verb
           noun_label_array = list(cleaned.values[:, 2]) # noun
           action_label_array = list(cleaned.values[:, 3]) # action
+          # lavila_narrator = list(cleaned.values[:, 9])
+          # self.lavila_narrator = [eval(nar) for nar in cleaned.values[:, 9]]
           self.label_array = np.stack((noun_label_array, verb_label_array, action_label_array), axis=1) # label [noun, verb] sequence
           
           if  (mode == 'train'):
@@ -107,7 +109,7 @@ class EpicVideoClsDataset(Dataset):
                else:
                     buffer = self._aug_frame(buffer, args)
                
-               return buffer, self.label_array[index], index, {}
+               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], {}
           
           elif self.mode == 'validation':
                sample = self.dataset_samples[index] + '.mp4'

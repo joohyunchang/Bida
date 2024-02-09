@@ -27,7 +27,9 @@ import models.bidir_modeling_crossattn
 import models.bidir_aim_modeling_crossattn
 import models.bidir_modeling_crossattn_concat
 import models.cast_square
+import models.cast_bisquare
 from models.prompt import text_prompt
+import pandas as pd
 
 
 def get_args():
@@ -488,7 +490,6 @@ def main(args, ds_init):
                                 'confidences_verb': np.array(conf_verb).mean()}
                     
                     # ======== save prediction result ======== #
-                    import pandas as pd
                     video_ids = [''.join(x).replace(' ','') for x in video_ids]
                     pred_noun = [class_list[0][i] for i in pred_noun]
                     pred_verb = [class_list[3][i] for i in pred_verb]
@@ -532,6 +533,14 @@ def main(args, ds_init):
             exit(0)
         
 
+    # ======== Narration Preprocessing ======== #
+    nar_path = os.path.join(args.anno_path, "epic100_train_gpt2_xl.csv")
+    cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
+    nar_list = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))}
+    # nar_list = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 6]] for i in range(len(cleaned))}
+    # nar_list = [eval(nar) for nar in cleaned.values[:, 9]]
+    # ========================================= #
+    
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
@@ -546,7 +555,7 @@ def main(args, ds_init):
             device, epoch, loss_scaler, args.clip_grad, model_ema, mixup_fn,
             log_writer=log_writer, start_steps=epoch * num_training_steps_per_epoch,
             lr_schedule_values=lr_schedule_values, wd_schedule_values=wd_schedule_values,
-            num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq, class_list=class_list
+            num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq, class_list=class_list, nar_list=nar_list
         )
         torch.cuda.empty_cache()
         if args.output_dir and args.save_ckpt:
@@ -624,7 +633,6 @@ def main(args, ds_init):
                     f.write(json.dumps(log_stats) + "\n")
     
             # ======== save prediction result ======== #
-            import pandas as pd
             video_ids = [''.join(x).replace(' ','') for x in video_ids]
             pred_noun = [class_list[0][i] for i in pred_noun]
             pred_verb = [class_list[3][i] for i in pred_verb]

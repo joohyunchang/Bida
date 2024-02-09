@@ -546,6 +546,8 @@ class Block(nn.Module):
         self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
         self.s2text_cross = CrossAttentionS2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
         self.t2text_cross = CrossAttentionT2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+        self.text2s_cross = CrossAttentionText2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+        self.text2t_cross = CrossAttentionText2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
         self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
         self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
         self.cross_text_up = nn.Linear(text_dim//self.down_ratio, text_dim)
@@ -614,8 +616,8 @@ class Block(nn.Module):
         n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
         n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
         n_text = self.ln_text_cross(self.cross_text_down(text))
-        c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x)))
-        c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x)))
+        c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x) + self.text2s_cross(n_s_x, n_text)))
+        c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x) + self.text2t_cross(n_t_x, n_text)))
         n_text = self.cross_text_up(self.act(self.s2text_cross(n_s_x, n_text) + self.t2text_cross(n_t_x, n_text)))
         s_x = s_x + self.drop_path(c_s_x)
         t_x = t_x + self.drop_path(c_t_x)
@@ -696,7 +698,8 @@ class STCrossTransformer(nn.Module):
                  vocab_size = 49408,
                  context_length = 77,
                  prefix = None,
-                 postfix = None):
+                 postfix = None,
+                 use_textF = True):
         super().__init__()
         self.num_classes = num_classes
         self.num_frames = all_frames
@@ -728,6 +731,7 @@ class STCrossTransformer(nn.Module):
         use_Adapter = True
         self.split_projection = True
         self.use_videoF = False
+        self.use_textF = True
         # ==============================================================================================================
         
         self.patch_embed = PatchEmbed(
@@ -765,16 +769,17 @@ class STCrossTransformer(nn.Module):
             if self.use_videoF:
                 self.noun_last_Adapter = Adapter(embed_dim, skip_connect=False)
                 self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
-            self.text_noun_last_Adapter = nn.Sequential(OrderedDict([
-                ("c_fc", nn.Linear(text_dim, text_dim // 4)),
-                ("gelu", QuickGELU()),
-                ("c_proj", nn.Linear(text_dim // 4, embed_dim))
-            ]))
-            self.text_verb_last_Adapter = nn.Sequential(OrderedDict([
-                ("c_fc", nn.Linear(text_dim, text_dim // 4)),
-                ("gelu", QuickGELU()),
-                ("c_proj", nn.Linear(text_dim // 4, embed_dim))
-            ]))
+            if self.use_textF:
+                self.text_noun_last_Adapter = nn.Sequential(OrderedDict([
+                    ("c_fc", nn.Linear(text_dim, text_dim // 4)),
+                    ("gelu", QuickGELU()),
+                    ("c_proj", nn.Linear(text_dim // 4, embed_dim))
+                ]))
+                self.text_verb_last_Adapter = nn.Sequential(OrderedDict([
+                    ("c_fc", nn.Linear(text_dim, text_dim // 4)),
+                    ("gelu", QuickGELU()),
+                    ("c_proj", nn.Linear(text_dim // 4, embed_dim))
+                ]))
             self.head_verb = nn.Linear(embed_dim, 97)
             self.head_verb_dropout = nn.Dropout(head_drop_rate)
             self.head_noun = nn.Linear(embed_dim, 300)
@@ -961,13 +966,13 @@ class STCrossTransformer(nn.Module):
     def forward(self, x, caption=None):
         if self.composition:
             if not self.split_projection:
-                if caption is not None:
-                    s_x, t_x, text_x = self.forward_features(x, caption=caption)
-                else:
-                    s_x, t_x, text_x = self.forward_features(x)
-                if self.use_videoF:
+                s_x, t_x, text_x = self.forward_features(x, caption=caption)
+                if self.use_videoF and self.use_textF:
                     s_x = self.noun_last_Adapter(s_x) + self.text_noun_last_Adapter(text_x)
                     t_x = self.verb_last_Adapter(t_x) + self.text_verb_last_Adapter(text_x)
+                elif self.use_videoF:
+                    s_x = self.noun_last_Adapter(s_x)
+                    t_x = self.verb_last_Adapter(t_x)
                 else:
                     s_x = self.text_noun_last_Adapter(text_x)
                     t_x = self.text_verb_last_Adapter(text_x)
@@ -977,13 +982,13 @@ class STCrossTransformer(nn.Module):
                 t_x = self.head_verb(t_x)
                 return s_x, t_x
             else:
-                if caption is not None:
-                    s_x, t_x, eos, sos  = self.forward_features(x, caption=caption, split_projection=self.split_projection)
-                else:
-                    s_x, t_x, eos, sos  = self.forward_features(x, split_projection=self.split_projection)
-                if self.use_videoF:
+                s_x, t_x, eos, sos  = self.forward_features(x, caption=caption, split_projection=self.split_projection)
+                if self.use_videoF and self.use_textF:
                     s_x = self.noun_last_Adapter(s_x) + self.text_noun_last_Adapter(sos)
                     t_x = self.verb_last_Adapter(t_x) + self.text_verb_last_Adapter(eos)
+                elif self.use_videoF:
+                    s_x = self.noun_last_Adapter(s_x)
+                    t_x = self.verb_last_Adapter(t_x)
                 else:
                     s_x = self.text_noun_last_Adapter(sos)
                     t_x = self.text_verb_last_Adapter(eos)
@@ -1001,7 +1006,7 @@ class STCrossTransformer(nn.Module):
 
 
 @register_model
-def cast_square_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def cast_bisquare_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     textlist, textdict, texttoken = class_list
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
@@ -1011,7 +1016,7 @@ def cast_square_base_patch16_224(pretrained=False, args=None, class_list=None, *
     return model
 
 @register_model
-def compo_cast_square_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_bisquare_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
@@ -1019,9 +1024,9 @@ def compo_cast_square_base_patch16_224(pretrained=False, args=None, class_list=N
     return model
 
 @register_model
-def compo_cast_square_8_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_bisquare_8_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
-        prefix = 4, postfix = 4, **kwargs)
+        prefix = 4, postfix = 4, use_textF=False, **kwargs)
     return model

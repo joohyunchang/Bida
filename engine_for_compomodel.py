@@ -9,11 +9,14 @@ from timm.utils import accuracy, ModelEma
 import util_tools.utils as utils
 from scipy.special import softmax
 from einops import rearrange
-
+import random
+import pandas as pd
 
 def composition_train_class_batch(model, samples, target_noun, target_verb, criterion, actionlist=None, captions=None):
     if actionlist is not None:
         captions = [actionlist[300*v.argmax()+n.argmax()] for n, v in zip(target_noun, target_verb)]
+        outputs_noun, outputs_verb = model(samples, captions)
+    elif captions is not None:
         outputs_noun, outputs_verb = model(samples, captions)
     else:
         outputs_noun, outputs_verb = model(samples)
@@ -34,7 +37,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None, log_writer=None,
                     start_steps=None, lr_schedule_values=None, wd_schedule_values=None,
-                    num_training_steps_per_epoch=None, update_freq=None, class_list=None):
+                    num_training_steps_per_epoch=None, update_freq=None, class_list=None, nar_list=None):
     model.train(True)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -48,14 +51,14 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
     
     # prompt setting
     actionlist = None
-    nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken = class_list
+    # nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken = class_list
 
     if loss_scaler is None:
         model.zero_grad()
         model.micro_steps = 0
     else:
         optimizer.zero_grad()
-    for data_iter_step, (samples, targets, _, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, targets, ids, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
             continue
@@ -71,14 +74,17 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
         batch_size = samples.shape[0]
+        captions = None
+        if nar_list is not None:
+            captions = [random.choice(nar_list[id]) for id in ids]
 
         if mixup_fn is not None:
-            samples, target_noun, target_verb = mixup_fn(samples, targets)
+            samples, target_noun, target_verb = mixup_fn(samples, targets[:,:2])
         
         if loss_scaler is None:
             samples = samples.half()
             loss, loss_noun, loss_verb, outputs_noun, outputs_verb = composition_train_class_batch(
-                model, samples, target_noun, target_verb, criterion, actionlist=actionlist)
+                model, samples, target_noun, target_verb, criterion, actionlist=actionlist, captions=captions)
         else:
             with torch.cuda.amp.autocast():
                 samples = samples.half()
@@ -177,6 +183,13 @@ def validation_one_epoch(args, data_loader, model, device):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Val:'
 
+    # ======== Narration Preprocessing ======== #
+    nar_path = os.path.join(args.anno_path, "epic100_val_gpt2_xl.csv")
+    cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
+    nar_list = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))}
+    # nar_list = [eval(nar) for nar in cleaned.values[:, 9]]
+    # ========================================= #
+    
     # switch to evaluation mode
     model.eval()
     for idx, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
@@ -189,8 +202,10 @@ def validation_one_epoch(args, data_loader, model, device):
 
         # compute output
         with torch.cuda.amp.autocast():
-            # captions = None
-            captions = [""]*batch_size
+            captions = None
+            # captions = [""]*batch_size
+            if nar_list is not None:
+                captions = [random.choice(nar_list[nar]) for nar in batch[2]]
             output_noun, output_verb = model(samples, captions)
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])
@@ -226,6 +241,13 @@ def final_test(args, data_loader, model, device, file):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
+    # ======== Narration Preprocessing ======== #
+    nar_path = os.path.join(args.anno_path, "epic100_val_gpt2_xl.csv")
+    cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
+    nar_list = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))}
+    # nar_list = [eval(nar) for nar in cleaned.values[:, 9]]
+    # ========================================= #
+
     # switch to evaluation mode
     model.eval()
     final_result = []
@@ -243,8 +265,10 @@ def final_test(args, data_loader, model, device, file):
         
         # compute output
         with torch.cuda.amp.autocast():
-            # captions = "None"
-            captions = [""]*batch_size
+            captions = None
+            # captions = [""]*batch_size
+            if nar_list is not None:
+                captions = [random.choice(nar_list[nar]) for nar in batch[2]]
             output_noun, output_verb = model(samples, captions)
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])

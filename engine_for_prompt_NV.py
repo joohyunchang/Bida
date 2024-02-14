@@ -61,11 +61,12 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('acc1', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
     metric_logger.add_meter('acc5', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    metric_logger.add_meter('acc1_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    metric_logger.add_meter('acc1_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
     # textlist, textdict, texttoken = class_list
     nounlist, noundict, nountoken, verblist, verbdict, verbtoken, textlist, textdict, texttoken = class_list
-    textdict = None
     
     if loss_scaler is None:
         model.zero_grad()
@@ -96,7 +97,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         if loss_scaler is None:
             samples = samples.half()            
             loss, output, logits = train_class_batch(
-                model, samples, targets, criterion, textlist, args.device, textFeature = textdict)
+                model, samples, targets[:,2], criterion, textlist, textdict, texttoken, args.device, textFeature = textdict)
         else:
             with torch.cuda.amp.autocast():
                 samples = samples.half() 
@@ -105,7 +106,13 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
 
         loss_value = loss.item()
         
-        top1_acc, top5_acc = accuracy(logits, targets, topk=(1, 5))
+        top1_acc, top5_acc = accuracy(logits, targets[:,2], topk=(1, 5))
+        _, indices = logits.softmax(dim=-1).topk(1, dim=-1)
+        indices = indices.squeeze(1)
+        top1_noun = (indices % 300) == targets[:,0]
+        top1_verb = (indices // 300) == targets[:,1]
+        acc1_noun = top1_noun.sum() / len(top1_noun) * 100
+        acc1_verb = top1_verb.sum() / len(top1_verb) * 100
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -162,8 +169,12 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         metric_logger.update(grad_norm=grad_norm)
         metric_logger.update(acc1=top1_acc.item())
         metric_logger.update(acc5=top5_acc.item())
+        metric_logger.update(acc1_noun=acc1_noun.item())
+        metric_logger.update(acc1_verb=acc1_verb.item())
         metric_logger.meters['acc1'].update(top1_acc.item(), n=batch_size)
         metric_logger.meters['acc5'].update(top5_acc.item(), n=batch_size)
+        metric_logger.meters['acc1_noun'].update(acc1_noun.item(), n=batch_size)
+        metric_logger.meters['acc1_verb'].update(acc1_verb.item(), n=batch_size)
 
         if log_writer is not None:
             log_writer.update(loss=loss_value, head="loss")
@@ -204,11 +215,7 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
         
         # compute output
         with torch.cuda.amp.autocast():
-            if idx == 0:
-                outputs_video, textFeature = model(videos, textlist)
-            else:
-                outputs_video, _ = model(videos, textlist)
-                
+            outputs_video = model(videos)
             if featnorm:
                 outputs_video = outputs_video / outputs_video.norm(dim=-1, keepdim=True)
                 textFeature = textFeature / textFeature.norm(dim=-1, keepdim=True)
@@ -216,16 +223,26 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
             else:
                 logits = outputs_video @ textFeature.t() if textFeature.dim() == 2 else torch.bmm(textFeature, outputs_video.unsqueeze(-1)).squeeze(-1)
         
-            loss = criterion(logits, target])
+            loss = criterion(logits, target[:,2])
 
-        acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+        acc1, acc5 = accuracy(logits, target[:,2], topk=(1, 5))
+        _, indices = logits.softmax(dim=-1).topk(1, dim=-1)
+        indices = indices.squeeze(1)
+        top1_noun = (indices % 300) == target[:,0]
+        top1_verb = (indices // 300) == target[:,1]
+        acc1_noun = top1_noun.sum() / len(top1_noun) * 100
+        acc1_verb = top1_verb.sum() / len(top1_verb) * 100
 
         batch_size = videos.shape[0]
         metric_logger.update(loss=loss.item())
         metric_logger.update(acc1=acc1.item())
         metric_logger.update(acc5=acc5.item())
+        metric_logger.update(acc1_noun=acc1_noun.item())
+        metric_logger.update(acc1_verb=acc1_verb.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+        metric_logger.meters['acc1_noun'].update(acc1_noun.item(), n=batch_size)
+        metric_logger.meters['acc1_verb'].update(acc1_verb.item(), n=batch_size)
         
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -312,10 +329,7 @@ def final_test(args,data_loader, model, device, file, class_list):
 
         # compute output
         with torch.cuda.amp.autocast():
-            if idx == 0:
-                outputs_video, textFeature = model(videos, textlist)
-            else:
-                outputs_video, _ = model(videos, textlist)
+            outputs_video = model(videos)
             if featnorm:
                 outputs_video = outputs_video / outputs_video.norm(dim=-1, keepdim=True)
                 textFeature = textFeature / textFeature.norm(dim=-1, keepdim=True)
@@ -323,24 +337,34 @@ def final_test(args,data_loader, model, device, file, class_list):
             else:
                 logits = outputs_video @ textFeature.t() if textFeature.dim() == 2 else torch.bmm(textFeature, outputs_video.unsqueeze(-1)).squeeze(-1)
         
-            loss = criterion(logits, target)
+            loss = criterion(logits, target[:,2])
 
         for i in range(outputs_video.size(0)):
             string = "{} {} {} {} {}\n".format(ids[i], \
                                                 str(logits.data[i].cpu().numpy().tolist()), \
-                                                str(int(target[i].cpu().numpy())), \
+                                                str(int(target[i,2].cpu().numpy())), \
                                                 str(int(chunk_nb[i].cpu().numpy())), \
                                                 str(int(split_nb[i].cpu().numpy())))
             final_result.append(string)
 
-        acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+        acc1, acc5 = accuracy(logits, target[:,2], topk=(1, 5))
+        _, indices = logits.softmax(dim=-1).topk(1, dim=-1)
+        indices = indices.squeeze(1)
+        top1_noun = (indices % 300) == target[:,0]
+        top1_verb = (indices // 300) == target[:,1]
+        acc1_noun = top1_noun.sum() / len(top1_noun) * 100
+        acc1_verb = top1_verb.sum() / len(top1_verb) * 100
 
         batch_size = videos.shape[0]
         metric_logger.update(loss=loss.item())
         metric_logger.update(acc1=acc1.item())
         metric_logger.update(acc5=acc5.item())
+        metric_logger.update(acc1_noun=acc1_noun.item())
+        metric_logger.update(acc1_verb=acc1_verb.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+        metric_logger.meters['acc1_noun'].update(acc1_noun.item(), n=batch_size)
+        metric_logger.meters['acc1_verb'].update(acc1_verb.item(), n=batch_size)
 
     if not os.path.exists(file):
         os.mknod(file)

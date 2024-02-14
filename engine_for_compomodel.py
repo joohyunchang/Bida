@@ -76,7 +76,8 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         batch_size = samples.shape[0]
         captions = None
         if nar_list is not None:
-            captions = [random.choice(nar_list[id]) for id in ids]
+            # captions = [random.choice(nar_list[id]) for id in ids]
+            captions = [random.choice(nar_list[id]).strip('#C C') for id in ids]
 
         if mixup_fn is not None:
             samples, target_noun, target_verb = mixup_fn(samples, targets[:,:2])
@@ -205,7 +206,8 @@ def validation_one_epoch(args, data_loader, model, device):
             captions = None
             # captions = [""]*batch_size
             if nar_list is not None:
-                captions = [random.choice(nar_list[nar]) for nar in batch[2]]
+                # captions = [random.choice(nar_list[nar]) for nar in batch[2]]
+                captions = [random.choice(nar_list[nar]).strip('#C C') for nar in batch[2]]
             output_noun, output_verb = model(samples, captions)
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])
@@ -268,7 +270,8 @@ def final_test(args, data_loader, model, device, file):
             captions = None
             # captions = [""]*batch_size
             if nar_list is not None:
-                captions = [random.choice(nar_list[nar]) for nar in batch[2]]
+                # captions = [random.choice(nar_list[nar]) for nar in batch[2]]
+                captions = [random.choice(nar_list[nar]).strip('#C C') for nar in batch[2]]
             output_noun, output_verb = model(samples, captions)
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])

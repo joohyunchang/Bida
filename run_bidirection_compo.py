@@ -30,6 +30,7 @@ import models.cast_square
 import models.cast_bisquare
 from models.prompt import text_prompt
 import pandas as pd
+from models.paraphrase import paraphrase
 
 
 def get_args():
@@ -336,7 +337,7 @@ def main(args, ds_init):
     args.window_size = 16
     args.patch_size = patch_size
     
-    class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=args.device)
+    class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
     
     model = create_model(
           args.vmae_model,
@@ -537,7 +538,9 @@ def main(args, ds_init):
     nar_path = os.path.join(args.anno_path, "epic100_train_gpt2_xl.csv")
     cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
     nar_list = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))}
-    # nar_list = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 6]] for i in range(len(cleaned))}
+    # nar_list = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 10]] for i in range(len(cleaned))}
+    # paraph = paraphrase(args.anno_path, device)
+    # nar_list = {cleaned.iloc[i, 0]: [paraph.generate(cleaned.iloc[i, 6])] for i in range(len(cleaned))}
     # nar_list = [eval(nar) for nar in cleaned.values[:, 9]]
     # ========================================= #
     

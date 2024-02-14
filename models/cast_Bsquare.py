@@ -498,6 +498,44 @@ class CrossAttentionT2S(nn.Module):
     def forward(self, s_x: torch.Tensor, t_x: torch.Tensor):
         return self.t2s_cross_attn(s_x, t_x)
 
+class B_CAST(nn.Module):
+    def __init__(self, dim, num_heads, num_frames=16, down_ratio=2, text_dim=512, text_num_heads=8, 
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, type='s-text'):
+        super().__init__()
+        self.num_frames = num_frames
+        self.down_ratio = down_ratio
+        self.down_ratio = down_ratio
+        self.act = act_layer()
+        self.cross_l_down = nn.Linear(dim, dim//self.down_ratio)
+        self.ln_l_cross = norm_layer(dim//self.down_ratio)
+        if type == 's-text':
+            self.cross_r_down = nn.Linear(text_dim, text_dim//self.down_ratio)
+            self.ln_r_cross = norm_layer(text_dim//self.down_ratio)
+            self.l2r_cross = CrossAttentionS2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.r2l_cross = CrossAttentionText2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.cross_r_up = nn.Linear(text_dim//self.down_ratio, text_dim)
+        elif type == 't-text':
+            self.cross_r_down = nn.Linear(text_dim, text_dim//self.down_ratio)
+            self.ln_r_cross = norm_layer(text_dim//self.down_ratio)
+            self.l2r_cross = CrossAttentionT2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.r2l_cross = CrossAttentionText2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.cross_r_up = nn.Linear(text_dim//self.down_ratio, text_dim)
+        elif type == 's-t':
+            self.cross_r_down = nn.Linear(dim, dim//self.down_ratio)
+            self.ln_r_cross = norm_layer(dim//self.down_ratio)
+            self.l2r_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
+            self.r2l_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames)
+            self.cross_r_up = nn.Linear(dim//self.down_ratio, dim)
+        self.cross_l_up = nn.Linear(dim//self.down_ratio, dim)
+            
+    def forward(self, l, r):
+        n_l = self.ln_l_cross(self.cross_l_down(l))
+        n_r = self.ln_r_cross(self.cross_r_down(r))
+        c_l = self.cross_l_up(self.act(self.l2r_cross(n_l, n_r)))
+        c_r = self.cross_r_up(self.act(self.r2l_cross(n_l, n_r)))
+        l = l + self.drop_path(c_l)
+        r = r + self.drop_path(c_r)
+        return l, r
     
 class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
@@ -537,22 +575,28 @@ class Block(nn.Module):
         #########################################################################################
         
         ###################################### Cross attention ####################################
-        self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
-        self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
-        self.cross_text_down = nn.Linear(text_dim, text_dim//self.down_ratio)
-        self.ln_s_cross = norm_layer(dim//self.down_ratio)
-        self.ln_t_cross = norm_layer(dim//self.down_ratio)
-        self.ln_text_cross = norm_layer(text_dim//self.down_ratio)
-        self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames)
-        self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
-        if self.num_layer in CA:
-            self.s2text_cross = CrossAttentionS2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-            self.t2text_cross = CrossAttentionT2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-            self.text2s_cross = CrossAttentionText2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-            self.text2t_cross = CrossAttentionText2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-        self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
-        self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
-        self.cross_text_up = nn.Linear(text_dim//self.down_ratio, text_dim)
+        self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t')
+        if self.num_layer in self.CA:
+            self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text')
+            self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text')
+        
+        # self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
+        # self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
+        # self.cross_text_down = nn.Linear(text_dim, text_dim//self.down_ratio)
+        # self.ln_s_cross = norm_layer(dim//self.down_ratio)
+        # self.ln_t_cross = norm_layer(dim//self.down_ratio)
+        # self.ln_text_cross = norm_layer(text_dim//self.down_ratio)
+        # self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames)
+        # self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
+        # self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
+        # self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
+        # self.cross_text_up = nn.Linear(text_dim//self.down_ratio, text_dim)
+        
+        # if self.num_layer in CA:
+        #     self.s2text_cross = CrossAttentionS2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+        #     self.t2text_cross = CrossAttentionT2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+        #     self.text2s_cross = CrossAttentionText2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+        #     self.text2t_cross = CrossAttentionText2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
         ###########################################################################################
         
         ###################################### FFN code #########################################
@@ -615,23 +659,28 @@ class Block(nn.Module):
         ########################################################################
         
         ############################ Cross Forward #############################
+        s_x, t_x = self.s_t_b_cast(s_x, t_x)
         if self.num_layer in self.CA:
-            n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
-            n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
-            n_text = self.ln_text_cross(self.cross_text_down(text))
-            c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x) + self.text2s_cross(n_s_x, n_text)))
-            c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x) + self.text2t_cross(n_t_x, n_text)))
-            n_text = self.cross_text_up(self.act(self.s2text_cross(n_s_x, n_text) + self.t2text_cross(n_t_x, n_text)))
-            s_x = s_x + self.drop_path(c_s_x)
-            t_x = t_x + self.drop_path(c_t_x)
-            text = text + self.drop_path(n_text)
-        else:
-            n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
-            n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
-            c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x)))
-            c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x)))
-            s_x = s_x + self.drop_path(c_s_x)
-            t_x = t_x + self.drop_path(c_t_x)
+            s_x, text = self.s_text_b_cast(s_x, text)
+            t_x, text = self.t_text_b_cast(t_x, text)
+        
+        # if self.num_layer in self.CA:
+        #     n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
+        #     n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
+        #     n_text = self.ln_text_cross(self.cross_text_down(text))
+        #     c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x) + self.text2s_cross(n_s_x, n_text)))
+        #     c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x) + self.text2t_cross(n_t_x, n_text)))
+        #     n_text = self.cross_text_up(self.act(self.s2text_cross(n_s_x, n_text) + self.t2text_cross(n_t_x, n_text)))
+        #     s_x = s_x + self.drop_path(c_s_x)
+        #     t_x = t_x + self.drop_path(c_t_x)
+        #     text = text + self.drop_path(n_text)
+        # else:
+        #     n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
+        #     n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
+        #     c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x)))
+        #     c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x)))
+        #     s_x = s_x + self.drop_path(c_s_x)
+        #     t_x = t_x + self.drop_path(c_t_x)
         #########################################################################
         
         ############################ FFN Forward ##################################
@@ -1022,7 +1071,7 @@ class STCrossTransformer(nn.Module):
 
 
 @register_model
-def cast_bisquare_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def cast_Bsquare_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     textlist, textdict, texttoken = class_list
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
@@ -1032,7 +1081,7 @@ def cast_bisquare_base_patch16_224(pretrained=False, args=None, class_list=None,
     return model
 
 @register_model
-def compo_cast_bisquare_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_Bsquare_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
@@ -1040,7 +1089,7 @@ def compo_cast_bisquare_base_patch16_224(pretrained=False, args=None, class_list
     return model
 
 @register_model
-def compo_cast_bisquare_8_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_Bsquare_8_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 

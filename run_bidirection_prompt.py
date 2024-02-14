@@ -221,6 +221,7 @@ def get_args():
     parser.add_argument('--text_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--text_dim',default=512, type=int, help='text dim set')
     parser.add_argument('--both', action='store_true', default=False)
+    parser.add_argument('--one_head', action='store_true', default=False)
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
     
     
@@ -497,7 +498,10 @@ def main(args, ds_init):
         else:
             from engine_for_prompt import train_one_epoch, validation_one_epoch, final_test, merge
     else:
-        from engine_for_prompt_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
+        if args.one_head:
+            from engine_for_prompt_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
+        else:
+            from engine_for_prompt_NV import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
     
     if args.eval or args.eval_result:
         if args.throughput:
@@ -557,6 +561,40 @@ def main(args, ds_init):
                                 row[2].fill = red_fill
                                 row[6].fill = red_fill
                         wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+                elif args.one_head:
+                    final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
+                    print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
+                    log_stats = {'Final top-1': final_top1, 
+                                'Final Top-5': final_top5,
+                                'confidences': np.array(conf).mean()}
+                    
+                    # ======== save prediction result ======== #
+                    video_ids = [''.join(x).replace(' ','') for x in video_ids]
+                    pred = [class_list[0][i] for i in pred]
+                    label = [class_list[0][int(i)] for i in label]
+                    pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'confidence':conf})
+                    pred_df['confidence'] = (pred_df['confidence']).round(4)
+                    pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+                    
+                    if args.xlsx:
+                        from openpyxl import Workbook
+                        from openpyxl.styles import PatternFill
+                        from openpyxl.utils.dataframe import dataframe_to_rows
+
+                        wb = Workbook()
+                        ws = wb.active
+
+                        # 데이터프레임을 엑셀 시트로 변환
+                        for r in dataframe_to_rows(pred_df, index=False, header=True):
+                            ws.append(r) 
+                            
+                        red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                        for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
+                            if row[1].value != row[2].value:
+                                row[1].fill = red_fill
+                                row[3].fill = red_fill
+                        wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+                    
                 else:
                     final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
                     pred, label = torch.tensor(pred).to(args.device), torch.tensor(label).to(args.device)
@@ -574,7 +612,6 @@ def main(args, ds_init):
                                 'confidences': np.array(conf).mean()}
                     
                     # ======== save prediction result ======== #
-                    import pandas as pd
                     video_ids = [''.join(x).replace(' ','') for x in video_ids]
                     pred_noun = [class_list[0][i] for i in pred_noun]
                     pred_verb = [class_list[3][i] for i in pred_verb]
@@ -736,6 +773,39 @@ def main(args, ds_init):
                         row[2].fill = red_fill
                         row[6].fill = red_fill
                 wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+        elif args.one_head:
+                    final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
+                    print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
+                    log_stats = {'Final top-1': final_top1, 
+                                'Final Top-5': final_top5,
+                                'confidences': np.array(conf).mean()}
+                    
+                    # ======== save prediction result ======== #
+                    video_ids = [''.join(x).replace(' ','') for x in video_ids]
+                    pred = [class_list[0][i] for i in pred]
+                    label = [class_list[0][int(i)] for i in label]
+                    pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'confidence':conf})
+                    pred_df['confidence'] = (pred_df['confidence']).round(4)
+                    pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+                    
+                    if args.xlsx:
+                        from openpyxl import Workbook
+                        from openpyxl.styles import PatternFill
+                        from openpyxl.utils.dataframe import dataframe_to_rows
+
+                        wb = Workbook()
+                        ws = wb.active
+
+                        # 데이터프레임을 엑셀 시트로 변환
+                        for r in dataframe_to_rows(pred_df, index=False, header=True):
+                            ws.append(r) 
+                            
+                        red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                        for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
+                            if row[1].value != row[2].value:
+                                row[1].fill = red_fill
+                                row[3].fill = red_fill
+                        wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
         else:
             final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
             pred, label = torch.tensor(pred).to(args.device), torch.tensor(label).to(args.device)

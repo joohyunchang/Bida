@@ -59,8 +59,8 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    metric_logger.add_meter('acc1', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    metric_logger.add_meter('acc5', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    # metric_logger.add_meter('acc1', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    # metric_logger.add_meter('acc5', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
     # textlist, textdict, texttoken = class_list

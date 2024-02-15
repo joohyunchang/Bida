@@ -42,10 +42,10 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    metric_logger.add_meter('acc1_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    metric_logger.add_meter('acc1_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    metric_logger.add_meter('acc5_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    metric_logger.add_meter('acc5_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}')) 
+    # metric_logger.add_meter('acc1_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    # metric_logger.add_meter('acc1_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    # metric_logger.add_meter('acc5_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    # metric_logger.add_meter('acc5_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}')) 
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
     
@@ -73,6 +73,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
 
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        action_target = (targets[:,1] * 1000) + targets[:,0]
         batch_size = samples.shape[0]
         captions = None
         if nar_list is not None:
@@ -93,6 +94,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                     model, samples, target_noun, target_verb, criterion)
         loss_value = loss.item()   
 
+        acc1_action, acc5_action = action_accuracy(outputs_noun, outputs_verb, action_target, topk=(1,5))
         top1_noun_acc, top5_noun_acc = accuracy(outputs_noun, targets[:,0], topk=(1, 5))
         top1_verb_acc, top5_verb_acc = accuracy(outputs_verb, targets[:,1], topk=(1, 5))
 
@@ -151,10 +153,12 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                 weight_decay_value = group["weight_decay"]
         metric_logger.update(weight_decay=weight_decay_value)
         metric_logger.update(grad_norm=grad_norm)
+        metric_logger.update(acc1_action=acc1_action.item())
         metric_logger.update(acc1_noun=top1_noun_acc.item())
         metric_logger.update(acc1_verb=top1_verb_acc.item())
         metric_logger.update(acc5_noun=top5_noun_acc.item())
         metric_logger.update(acc5_verb=top5_verb_acc.item())
+        metric_logger.meters['acc1_action'].update(acc1_action.item(), n=batch_size)
         metric_logger.meters['acc1_noun'].update(top1_noun_acc.item(), n=batch_size)
         metric_logger.meters['acc1_verb'].update(top1_verb_acc.item(), n=batch_size)
         metric_logger.meters['acc5_noun'].update(top5_noun_acc.item(), n=batch_size)

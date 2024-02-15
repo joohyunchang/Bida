@@ -506,6 +506,8 @@ class B_CAST(nn.Module):
         self.down_ratio = down_ratio
         self.down_ratio = down_ratio
         self.act = act_layer()
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        
         self.cross_l_down = nn.Linear(dim, dim//self.down_ratio)
         self.ln_l_cross = norm_layer(dim//self.down_ratio)
         if type == 's-text':
@@ -531,8 +533,8 @@ class B_CAST(nn.Module):
     def forward(self, l, r):
         n_l = self.ln_l_cross(self.cross_l_down(l))
         n_r = self.ln_r_cross(self.cross_r_down(r))
-        c_l = self.cross_l_up(self.act(self.l2r_cross(n_l, n_r)))
-        c_r = self.cross_r_up(self.act(self.r2l_cross(n_l, n_r)))
+        c_l = self.cross_l_up(self.act(self.r2l_cross(n_l, n_r)))
+        c_r = self.cross_r_up(self.act(self.l2r_cross(n_l, n_r)))
         l = l + self.drop_path(c_l)
         r = r + self.drop_path(c_r)
         return l, r
@@ -791,7 +793,7 @@ class STCrossTransformer(nn.Module):
         self.split_projection = False
         self.use_videoF = True
         self.use_textF = True
-        CA = [i for i in range(9, 12)]
+        CA = [i for i in range(0, 12)]
         # ==============================================================================================================
         
         self.patch_embed = PatchEmbed(

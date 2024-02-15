@@ -10,7 +10,7 @@ import util_tools.utils as utils
 from scipy.special import softmax
 from einops import rearrange, repeat
 import random
-
+import pandas as pd
 
 def composition_train_class_batch(model, samples, target_noun, target_verb, criterion,
                                   nounlist, verblist, actionlist, device):
@@ -70,10 +70,10 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    metric_logger.add_meter('acc1_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    metric_logger.add_meter('acc1_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    metric_logger.add_meter('acc5_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    metric_logger.add_meter('acc5_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}')) 
+    # metric_logger.add_meter('acc1_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    # metric_logger.add_meter('acc1_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    # metric_logger.add_meter('acc5_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
+    # metric_logger.add_meter('acc5_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}')) 
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
     
@@ -100,6 +100,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
 
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        action_target = (targets[:,1] * 1000) + targets[:,0]
         batch_size = samples.shape[0]
 
         target_noun, target_verb = targets[:,0], targets[:,1]
@@ -117,6 +118,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                     model, samples, target_noun, target_verb, criterion)
         loss_value = loss.item()   
 
+        acc1_action, acc5_action = action_accuracy(outputs_noun, noun_logits, verb_logits, topk=(1,5))
         # if (step * update_freq) % 60 == 0 and data_iter_step % update_freq == 0:
         # noun_sim = noun_logits.softmax(dim=-1)
         # verb_sim = verb_logits.softmax(dim=-1)
@@ -188,10 +190,12 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
                 weight_decay_value = group["weight_decay"]
         metric_logger.update(weight_decay=weight_decay_value)
         metric_logger.update(grad_norm=grad_norm)
+        metric_logger.update(acc1_action=acc1_action.item())
         metric_logger.update(acc1_noun=top1_noun_acc.item())
         metric_logger.update(acc1_verb=top1_verb_acc.item())
         metric_logger.update(acc5_noun=top5_noun_acc.item())
         metric_logger.update(acc5_verb=top5_verb_acc.item())
+        metric_logger.meters['acc1_action'].update(acc1_action.item(), n=batch_size)
         metric_logger.meters['acc1_noun'].update(top1_noun_acc.item(), n=batch_size)
         metric_logger.meters['acc1_verb'].update(top1_verb_acc.item(), n=batch_size)
         metric_logger.meters['acc5_noun'].update(top5_noun_acc.item(), n=batch_size)

@@ -31,7 +31,7 @@ import models.cast_bisquare
 import models.cast_Bsquare
 from models.prompt import text_prompt
 import pandas as pd
-from models.paraphrase import paraphrase
+# from models.paraphrase import paraphrase
 
 
 def get_args():

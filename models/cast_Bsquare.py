@@ -793,7 +793,7 @@ class STCrossTransformer(nn.Module):
         self.split_projection = False
         self.use_videoF = True
         self.use_textF = True
-        CA = [i for i in range(0, 12)]
+        CA = [i for i in range(9, 12)]
         # ==============================================================================================================
         
         self.patch_embed = PatchEmbed(

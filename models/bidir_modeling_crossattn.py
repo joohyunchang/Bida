@@ -406,6 +406,7 @@ class STCrossTransformer(nn.Module):
                  use_mean_pooling=True,
                  composition=False,
                  fusion_method=None,
+                 audio_enabled=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -415,6 +416,7 @@ class STCrossTransformer(nn.Module):
         self.tubelet_size = tubelet_size
         self.down_ratio = down_ratio
         self.composition = composition
+        self.audio_enabled = audio_enabled
         self.patch_embed = PatchEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim, num_frames=all_frames, tubelet_size=self.tubelet_size)
         num_patches = self.patch_embed.num_patches
@@ -450,6 +452,9 @@ class STCrossTransformer(nn.Module):
             self.head_verb_dropout = nn.Dropout(head_drop_rate)
             self.head_noun = nn.Linear(embed_dim, 300)
             self.head_noun_dropout = nn.Dropout(head_drop_rate)
+            if audio_enabled is not None:
+                self.noun_last_Adapter = Adapter(embed_dim, skip_connect=True)
+                self.verb_last_Adapter = Adapter(embed_dim, skip_connect=True)
         else:
             self.noun_last_Adapter = Adapter(embed_dim, skip_connect=True)
             self.verb_last_Adapter = Adapter(embed_dim, skip_connect=True)
@@ -467,6 +472,9 @@ class STCrossTransformer(nn.Module):
             self.head_verb.bias.data.mul_(init_scale)
             self.head_noun.weight.data.mul_(init_scale)
             self.head_noun.bias.data.mul_(init_scale)
+            if audio_enabled is not None:
+                nn.init.constant_(self.noun_last_Adapter.D_fc2.weight, 0)
+                nn.init.constant_(self.verb_last_Adapter.D_fc2.weight, 0)
         else:
             nn.init.constant_(self.noun_last_Adapter.D_fc2.weight, 0)
             nn.init.constant_(self.verb_last_Adapter.D_fc2.weight, 0)
@@ -514,11 +522,12 @@ class STCrossTransformer(nn.Module):
     def reset_fcnorm(self):
         self.vmae_fc_norm = nn.LayerNorm(self.embed_dim)
     
-    
-    
-    def forward_features(self, x):
+    def forward_features(self, x, spec=None):
         B = x.shape[0]
-        s_x = x[:, :, 1::2, :, :] # pick even frames
+        if spec is not None:
+            s_x = spec[:, :, 1::2, :, :]
+        else:
+            s_x = x[:, :, 1::2, :, :] # pick even frames
         # s_x = torch.randn_like(x[:, :, 1::2, :, :]) # pick even frames
         ######################## AIM spatial path #########################
         s_t = s_x.shape[2]
@@ -551,9 +560,19 @@ class STCrossTransformer(nn.Module):
         
         return s_x, t_x
 
-    def forward(self, x):
-        if self.composition:
-            s_x, t_x = self.forward_features(x)
+    def forward(self, x, captions=None, spec=None):
+        # if spec is not None:
+        #     spec = torch.stack(spec, dim=0)
+        if self.audio_enabled:
+            s_x, t_x = self.forward_features(x, spec)
+            x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+            s_x = self.head_noun_dropout(x)
+            s_x = self.head_noun(s_x)
+            t_x = self.head_verb_dropout(x)
+            t_x = self.head_verb(t_x)
+            return s_x, t_x
+        elif self.composition:
+            s_x, t_x = self.forward_features(x, spec)
             s_x = self.head_noun_dropout(s_x)
             s_x = self.head_noun(s_x)
             t_x = self.head_verb_dropout(t_x)
@@ -578,4 +597,11 @@ def compo_bidir_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
+    return model
+
+@register_model
+def compo_audio_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, **kwargs)
     return model

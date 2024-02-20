@@ -168,6 +168,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
 
         if mixup_fn is None:
             pass
+            class_acc = None
             # class_acc = (output.max(-1)[-1] == targets).float().mean()
         else:
             class_acc = None

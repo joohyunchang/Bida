@@ -182,13 +182,13 @@ def build_dataset(is_train, test_mode, args):
         anno_path = None
         if is_train is True:
             mode = 'train'
-            anno_path = os.path.join(args.anno_path, 'epic100_compo_train.csv')
+            anno_path = os.path.join(args.anno_path, 'epic100_train_gpt2_xl.csv')
         elif test_mode is True:
             mode = 'test'
-            anno_path = os.path.join(args.anno_path, 'epic100_compo_val.csv')
+            anno_path = os.path.join(args.anno_path, 'epic100_val_gpt2_xl.csv')
         else:
             mode = 'validation'
-            anno_path = os.path.join(args.anno_path, 'epic100_compo_val.csv')
+            anno_path = os.path.join(args.anno_path, 'epic100_val_gpt2_xl.csv')
 
         dataset = EpicVideoClsDataset(
             anno_path=anno_path,
@@ -204,7 +204,8 @@ def build_dataset(is_train, test_mode, args):
             short_side_size=args.short_side_size,
             new_height=256,
             new_width=320,
-            args=args)
+            args=args,
+            audio_path=args.audio_path)
         nb_classes = 300
     elif args.data_set == 'EPIC_dense':
         mode = None

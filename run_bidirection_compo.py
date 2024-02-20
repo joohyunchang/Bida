@@ -20,7 +20,7 @@ from util_tools.optim_factory import create_optimizer, get_parameter_groups, Lay
 
 from dataset.datasets import build_dataset
 from util_tools.utils import NativeScalerWithGradNormCount as NativeScaler, load_bidir_weights, unfreeze_block
-from util_tools.utils import multiple_samples_collate, notice_message, laod_eval_weights
+from util_tools.utils import multiple_samples_collate, notice_message, laod_eval_weights, audio_collate_fn, test_audio_collate_fn
 import util_tools.utils as utils
 import models.bidir_modeling_after_crossattn
 import models.bidir_modeling_crossattn
@@ -216,6 +216,7 @@ def get_args():
     parser.add_argument('--xlsx', action='store_true', default=False)
     parser.add_argument('--text_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
+    parser.add_argument('--audio_path', default=None, type=str, help='audio path')
     
     
     
@@ -288,10 +289,15 @@ def main(args, ds_init):
     else:
         log_writer = None
 
-    if args.num_sample > 1:
-        collate_func = partial(multiple_samples_collate, fold=False)
+    # if args.num_sample > 1:
+    #     collate_func = partial(multiple_samples_collate, fold=False)
+    # else:
+    #     collate_func = None
+    if args.audio_path is not None:
+        # train_collate, val_collate, test_collate = audio_collate_fn, audio_collate_fn, test_audio_collate_fn
+        train_collate, val_collate, test_collate = None, None, None
     else:
-        collate_func = None
+        train_collate, val_collate, test_collate = None, None, None
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, sampler=sampler_train,
@@ -299,7 +305,7 @@ def main(args, ds_init):
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=True,
-        collate_fn=collate_func,
+        collate_fn=train_collate,
     )
 
     if dataset_val is not None:
@@ -308,7 +314,8 @@ def main(args, ds_init):
             batch_size=int(1.5 * args.batch_size),
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
-            drop_last=False
+            drop_last=False,
+            collate_fn=val_collate
         )
     else:
         data_loader_val = None
@@ -319,7 +326,8 @@ def main(args, ds_init):
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
-            drop_last=False
+            drop_last=False,
+            collate_fn=test_collate
         )
     else:
         data_loader_test = None
@@ -338,7 +346,10 @@ def main(args, ds_init):
     args.window_size = 16
     args.patch_size = patch_size
     
-    class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
+    if False:
+        class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
+    else:
+        class_list = None
     
     model = create_model(
           args.vmae_model,
@@ -477,6 +488,7 @@ def main(args, ds_init):
             if not args.eval_result:
                 test_stats = final_test(args, data_loader_test, model, device, preds_file)
             torch.distributed.barrier()
+            class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
             if global_rank == 0:
                 print("Start merging results...")
                 if args.composition:
@@ -535,15 +547,18 @@ def main(args, ds_init):
             exit(0)
         
 
-    # ======== Narration Preprocessing ======== #
-    nar_path = os.path.join(args.anno_path, "epic100_train_gpt2_xl.csv")
-    cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
-    nar_list = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))}
-    # nar_list = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 10]] for i in range(len(cleaned))}
-    # paraph = paraphrase(args.anno_path, device)
-    # nar_list = {cleaned.iloc[i, 0]: [paraph.generate(cleaned.iloc[i, 6])] for i in range(len(cleaned))}
-    # nar_list = [eval(nar) for nar in cleaned.values[:, 9]]
-    # ========================================= #
+    if False:
+        # ======== Narration Preprocessing ======== #
+        nar_path = os.path.join(args.anno_path, "epic100_train_gpt2_xl.csv")
+        cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
+        nar_list = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))}
+        # nar_list = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 14]] for i in range(len(cleaned))}
+        # paraph = paraphrase(args.anno_path, device)
+        # nar_list = {cleaned.iloc[i, 0]: [paraph.generate(cleaned.iloc[i, 6])] for i in range(len(cleaned))}
+        # nar_list = [eval(nar) for nar in cleaned.values[:, 9]]
+        # ========================================= #
+    else:
+        nar_list = None
     
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -621,6 +636,7 @@ def main(args, ds_init):
     torch.distributed.barrier()
     if global_rank == 0:
         print("Start merging results...")
+        class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
         if args.composition:
             final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb, pred_noun, pred_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb = merge(args.output_dir, num_tasks, return_result=True)
             print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1 Action: {final_top1_action:.2f}%, Top-5 Action: {final_top5_action:.2f}%")

@@ -33,7 +33,7 @@ class EpicVideoClsDataset(Dataset):
           self.args = args
           self.aug = False
           self.rand_erase = False
-          self.audio_type = 'stack'
+          self.audio_type = 'frame'
           if self.mode in ['train']:
                self.aug = True
                if self.args.reprob > 0:
@@ -54,10 +54,11 @@ class EpicVideoClsDataset(Dataset):
           noun_label_array = list(cleaned.values[:, 2]) # noun
           action_label_array = list(cleaned.values[:, 3]) # action
           # self.audio_samples = pickle.load(open(audio_path, 'rb')) if audio_path is not None else None
-          self.audio_samples = {cleaned.iloc[i, 0]: cleaned.iloc[i, 10:14] for i in range(len(cleaned))}
+          self.audio_samples = {cleaned.iloc[i, 0]: cleaned.iloc[i, 12:14] for i in range(len(cleaned))}
           # self.audio_samples = None
           # lavila_narrator = list(cleaned.values[:, 9])
           # self.lavila_narrator = [eval(nar) for nar in cleaned.values[:, 9]]
+          del(cleaned)
           self.label_array = np.stack((noun_label_array, verb_label_array, action_label_array), axis=1) # label [noun, verb] sequence
           
           if  (mode == 'train'):
@@ -309,8 +310,36 @@ class EpicVideoClsDataset(Dataset):
                else:
                     samples = samples[left_sample:right_sample:stride]
                     samples = samples[:length]
-          spec = self.spectrogram(samples)
-          if audio_type == 'stack':
+               spec = self.spectrogram(samples)
+               spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
+          elif audio_type == 'frame':
+               average_duration = (stop_frame - start_frame) // self.num_segment
+               all_index = []
+               if average_duration > 0:
+                    all_index += list(np.multiply(list(range(self.num_segment)), average_duration) + np.random.randint(average_duration, size=self.num_segment))
+               else:
+                    all_index = list(range(15))
+                    all_index.extend(np.random.choice(range(len(all_index)), size=(16 - len(all_index)), replace=True))
+                    all_index = list(np.sort(all_index))
+               spec = []
+               for idx in all_index:
+                    centre_sec = (start_frame  + idx) /60
+                    left_sec = centre_sec - 0.559
+                    right_sec = centre_sec + 0.559
+                    left_sample = int(round(left_sec * sample_rate))
+                    right_sample = int(round(right_sec * sample_rate))
+                    if left_sec < 0:
+                         trim_samples = samples[:length]
+                    elif right_sample >= len(samples):
+                         trim_samples = samples[-length:]
+                    else:
+                         trim_samples = samples[left_sample:right_sample]
+                    spec.append(self.spectrogram(trim_samples).unsqueeze(0).repeat(3,1,1))
+                    del(trim_samples)
+               spec = torch.stack(spec, dim=1)
+          else:
+               samples = samples[left_sample:right_sample]
+               spec = self.spectrogram(samples)
                spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
                # spec = spec.unsqueeze(0).unsqueeze(0).expand(3, 16, -1, -1)
           return spec

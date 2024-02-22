@@ -177,8 +177,6 @@ class EpicVideoClsDataset(Dataset):
                sample = self.test_dataset[index] + '.mp4'
                sample = os.path.join(self.data_path, sample)
                chunk_nb, split_nb = self.test_seg[index]
-               if self.disable_video:
-                    return torch.tensor([1]), self.label_array[index], chunk_nb, split_nb, sample.split("/")[-1].split(".")[0], spec
                buffer = self.loadvideo_decord(sample)
 
                while len(buffer) == 0:

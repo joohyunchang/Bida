@@ -310,16 +310,17 @@ class Block(nn.Module):
         ##################################################################
         #########################################################################################
         
-        ###################################### Cross attention ####################################
-        self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
-        self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
-        self.ln_s_cross = norm_layer(dim//self.down_ratio)
-        self.ln_t_cross = norm_layer(dim//self.down_ratio)
-        self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames)
-        self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
-        self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
-        self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
-        ###########################################################################################
+        if num_layer >= 0:
+            ###################################### Cross attention ####################################
+            self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
+            self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
+            self.ln_s_cross = norm_layer(dim//self.down_ratio)
+            self.ln_t_cross = norm_layer(dim//self.down_ratio)
+            self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames)
+            self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
+            self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
+            self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
+            ###########################################################################################
         
         ###################################### FFN code #########################################
         ############################ AIM FFN ###############################
@@ -359,14 +360,15 @@ class Block(nn.Module):
         t_x = t_x + self.T_Adapter(self.attn(self.norm1(t_x)))
         ########################################################################
         
-        ############################ Cross Forward #############################
-        n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
-        n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
-        c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x)))
-        c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x)))
-        s_x = s_x + self.drop_path(c_s_x)
-        t_x = t_x + self.drop_path(c_t_x)
-        #########################################################################
+        if self.num_layer >= 0:
+            ############################ Cross Forward #############################
+            n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
+            n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
+            c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x)))
+            c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x)))
+            s_x = s_x + self.drop_path(c_s_x)
+            t_x = t_x + self.drop_path(c_t_x)
+            #########################################################################
         
         ############################ FFN Forward ##################################
         s_xn = self.clip_ln_2(s_x)
@@ -566,6 +568,7 @@ class STCrossTransformer(nn.Module):
         if self.audio_enabled:
             s_x, t_x = self.forward_features(x, spec)
             x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+            # x = self.verb_last_Adapter(t_x)
             s_x = self.head_noun_dropout(x)
             s_x = self.head_noun(s_x)
             t_x = self.head_verb_dropout(x)

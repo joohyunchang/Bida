@@ -34,6 +34,7 @@ class EpicVideoClsDataset(Dataset):
           self.aug = False
           self.rand_erase = False
           self.audio_type = 'frame'
+          self.disable_video = False
           if self.mode in ['train']:
                self.aug = True
                if self.args.reprob > 0:
@@ -47,7 +48,7 @@ class EpicVideoClsDataset(Dataset):
           import pickle
           cleaned = pd.read_csv(self.anno_path, header=0, delimiter=',')
           # if self.mode == 'train':
-          #      self.dataset_samples = list(cleaned.values[:, 0])[:5001]
+          #      self.dataset_samples = list(cleaned.values[:, 0])[:101]
           # else:
           self.dataset_samples = list(cleaned.values[:, 0])
           verb_label_array = list(cleaned.values[:, 1]) # verb
@@ -97,10 +98,6 @@ class EpicVideoClsDataset(Dataset):
                args = self.args
                scale_t = 1
                
-               sample = self.dataset_samples[index] + '.mp4'
-               sample = os.path.join(self.data_path, sample)
-               buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
-               
                if self.audio_path is not None:
                     audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
                     audio_sample = os.path.join(self.audio_path, audio_id + '.wav')
@@ -113,6 +110,13 @@ class EpicVideoClsDataset(Dataset):
                          spec = torch.random((3, 16, 224, 224))
                else:
                     spec = {}
+               
+               sample = self.dataset_samples[index] + '.mp4'
+               sample = os.path.join(self.data_path, sample)
+               if self.disable_video:
+                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec
+               buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
+               
                if len(buffer) == 0:
                     while len(buffer) == 0:
                          warnings.warn("video {} not correctly loaded during training".format(sample))
@@ -136,10 +140,6 @@ class EpicVideoClsDataset(Dataset):
                return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec
           
           elif self.mode == 'validation':
-               sample = self.dataset_samples[index] + '.mp4'
-               sample = os.path.join(self.data_path, sample)
-               buffer = self.loadvideo_decord(sample)
-               
                if self.audio_path is not None:
                     audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
                     audio_sample = os.path.join(self.audio_path, audio_id + '.wav')
@@ -148,6 +148,13 @@ class EpicVideoClsDataset(Dataset):
                     spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
                else:
                     spec = {}
+               
+               sample = self.dataset_samples[index] + '.mp4'
+               sample = os.path.join(self.data_path, sample)
+               if self.disable_video:
+                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec
+               buffer = self.loadvideo_decord(sample)
+               
                if len(buffer) == 0:
                     while len(buffer) == 0:
                          warnings.warn("video {} not correctly loaded during validation".format(sample))
@@ -158,11 +165,6 @@ class EpicVideoClsDataset(Dataset):
                return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec
           
           elif self.mode == 'test':
-               sample = self.test_dataset[index] + '.mp4'
-               sample = os.path.join(self.data_path, sample)
-               chunk_nb, split_nb = self.test_seg[index]
-               buffer = self.loadvideo_decord(sample)
-
                if self.audio_path is not None:
                     audio_id = '_'.join(self.test_dataset[index].split('_')[:-1])
                     audio_sample = os.path.join(self.audio_path, audio_id + '.wav')
@@ -171,6 +173,14 @@ class EpicVideoClsDataset(Dataset):
                     spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
                else:
                     spec = {}
+               
+               sample = self.test_dataset[index] + '.mp4'
+               sample = os.path.join(self.data_path, sample)
+               chunk_nb, split_nb = self.test_seg[index]
+               if self.disable_video:
+                    return torch.tensor([1]), self.label_array[index], chunk_nb, split_nb, sample.split("/")[-1].split(".")[0], spec
+               buffer = self.loadvideo_decord(sample)
+
                while len(buffer) == 0:
                     warnings.warn("video {}, temporal {}, spatial {} not found during testing".format(\
                     str(self.test_dataset[index]), chunk_nb, split_nb))
@@ -279,14 +289,16 @@ class EpicVideoClsDataset(Dataset):
                ),
                torchaudio.transforms.AmplitudeToDB()
           )
-          # mel_spectrogram = torch.nn.Sequential(
-          #     torchaudio.transforms.MelSpectrogram(
-          #         sample_rate=resampling_rate,
-          #         n_fft=447,
-          #         win_length=nperseg,
-          #         hop_length=noverlap
-          #     ),
-          #     torchaudio.transforms.AmplitudeToDB()
+          # self.spectogram = torch.nn.Sequential(
+          #      torchaudio.transforms.MelSpectrogram(
+          #           sample_rate=resampling_rate,
+          #           n_fft=447,  # FFT 창 크기
+          #           win_length=nperseg,
+          #           hop_length=noverlap,
+          #           window_fn=torch.hann_window,
+          #           n_mels=224  # mel 스펙트로그램 빈의 수
+          #      ),
+          #      torchaudio.transforms.AmplitudeToDB()
           # )
      
      def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack'):
@@ -298,7 +310,7 @@ class EpicVideoClsDataset(Dataset):
           right_sample = int(round(right_sec * sample_rate))
           length_sample = right_sample - left_sample
           length = int(round(1.119*sample_rate))
-          if audio_type == 'stack':
+          if audio_type in ['stack','single']:
                stride = int(length_sample // length)
                if stride == 0:
                     if left_sample+length < len(samples):
@@ -311,7 +323,7 @@ class EpicVideoClsDataset(Dataset):
                     samples = samples[left_sample:right_sample:stride]
                     samples = samples[:length]
                spec = self.spectrogram(samples)
-               spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
+               spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1) if audio_type == 'stack' else spec.unsqueeze(0).repeat(3, 1, 1)
           elif audio_type == 'frame':
                average_duration = (stop_frame - start_frame) // self.num_segment
                all_index = []

@@ -493,9 +493,12 @@ class STCrossTransformer(nn.Module):
         return s_x
 
 
-    def forward(self, x):
+    def forward(self, x, captions=None, spec=None):
         if self.composition:
-            s_x = self.forward_features(x)
+            if spec is not None:
+                s_x = self.forward_features(spec)
+            else:
+                s_x = self.forward_features(x)
             noun = self.head_noun(s_x)
             verb = self.head_verb(s_x)
             return noun, verb

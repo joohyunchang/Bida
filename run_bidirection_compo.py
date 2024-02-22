@@ -29,6 +29,7 @@ import models.bidir_modeling_crossattn_concat
 import models.cast_square
 import models.cast_bisquare
 import models.cast_Bsquare
+import models.AIM_cls
 from models.prompt import text_prompt
 import pandas as pd
 # from models.paraphrase import paraphrase

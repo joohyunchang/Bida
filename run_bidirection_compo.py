@@ -218,6 +218,7 @@ def get_args():
     parser.add_argument('--text_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
     parser.add_argument('--audio_path', default=None, type=str, help='audio path')
+    parser.add_argument('--collate', action='store_true', default=False)
     
     
     
@@ -295,8 +296,11 @@ def main(args, ds_init):
     # else:
     #     collate_func = None
     if args.audio_path is not None:
-        # train_collate, val_collate, test_collate = audio_collate_fn, audio_collate_fn, test_audio_collate_fn
-        train_collate, val_collate, test_collate = None, None, None
+        # args.collate == True
+        if args.collate:
+            train_collate, val_collate, test_collate = audio_collate_fn, audio_collate_fn, test_audio_collate_fn
+        else:
+            train_collate, val_collate, test_collate = None, None, None
     else:
         train_collate, val_collate, test_collate = None, None, None
 

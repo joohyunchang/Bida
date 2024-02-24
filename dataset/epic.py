@@ -33,7 +33,7 @@ class EpicVideoClsDataset(Dataset):
           self.args = args
           self.aug = False
           self.rand_erase = False
-          self.audio_type = 'frame'
+          self.audio_type = 'all'
           self.disable_video = False
           if self.mode in ['train']:
                self.aug = True
@@ -104,7 +104,7 @@ class EpicVideoClsDataset(Dataset):
                     start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                     end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                     try:
-                         spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
+                         spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, mode=self.mode)
                     except:
                          print("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
                          spec = torch.random((3, 16, 224, 224))
@@ -272,34 +272,53 @@ class EpicVideoClsDataset(Dataset):
 
           return buffer
 
+     def add_noise(self, audio, noise_level=0.005):
+          noise = torch.randn(audio.shape)
+          return audio + noise_level * noise
+     
      def _spectrogram_init(self, window_size=10,
                      step_size=5, resampling_rate=24000):
           nperseg = int(round(window_size * resampling_rate / 1e3))
           noverlap = int(round(step_size * resampling_rate / 1e3))
 
           # torchaudio를 사용한 스펙트로그램 계산
-          self.spectrogram = torch.nn.Sequential(
-               torchaudio.transforms.Spectrogram(
-                    n_fft=447,
-                    win_length=nperseg,
-                    hop_length=noverlap,
-                    window_fn=torch.hann_window
-               ),
-               torchaudio.transforms.AmplitudeToDB()
-          )
-          # self.spectogram = torch.nn.Sequential(
-          #      torchaudio.transforms.MelSpectrogram(
-          #           sample_rate=resampling_rate,
-          #           n_fft=447,  # FFT 창 크기
+          # self.spectrogram = torch.nn.Sequential(
+          #      torchaudio.transforms.Spectrogram(
+          #           n_fft=447,
           #           win_length=nperseg,
           #           hop_length=noverlap,
-          #           window_fn=torch.hann_window,
-          #           n_mels=224  # mel 스펙트로그램 빈의 수
+          #           window_fn=torch.hann_window
           #      ),
           #      torchaudio.transforms.AmplitudeToDB()
           # )
+          self.spectrogram = torch.nn.Sequential(
+               torchaudio.transforms.MelSpectrogram(
+                    sample_rate=resampling_rate,
+                    n_fft=447,  # FFT 창 크기
+                    win_length=nperseg,
+                    hop_length=noverlap,
+                    window_fn=torch.hann_window,
+                    n_mels=224  # mel 스펙트로그램 빈의 수
+               ),
+               torchaudio.transforms.AmplitudeToDB()
+          )
+          
+     def _specgram(self, audio, window_size=10, step_size=5, eps=1e-6, resampling_rate=24000, target_length=1.119):
+          current_length = audio.shape[-1] / resampling_rate
+          if current_length != target_length:
+               new_freq = int(round(resampling_rate * target_length / current_length/100) * 100)
+               resample_transform = torchaudio.transforms.Resample(orig_freq=resampling_rate, new_freq=new_freq)
+               audio = resample_transform(audio)
+          spec = self.spectrogram(audio)
+          if spec.shape[-1] != 224:
+               expand = 224 - spec.shape[-1]
+               if spec.dim() == 3:
+                    spec = spec[:,:,:224] if spec.shape[-1] > 224 else torch.concat([spec,spec[:,:,-expand:]],dim=-1)
+               else:
+                    spec = spec[:,:224] if spec.shape[-1] > 224 else torch.concat([spec,spec[:,-expand:]],dim=-1)
+          return spec
      
-     def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack'):
+     def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test'):
           samples, sample_rate = torchaudio.load(sample)
           samples = samples.squeeze(0)
           left_sec = start_frame / 60
@@ -338,15 +357,22 @@ class EpicVideoClsDataset(Dataset):
                     right_sec = centre_sec + 0.559
                     left_sample = int(round(left_sec * sample_rate))
                     right_sample = int(round(right_sec * sample_rate))
+                    length = int(round(1.118*sample_rate))
                     if left_sec < 0:
-                         trim_samples = samples[:length]
+                         spec.append(samples[:length])
                     elif right_sample >= len(samples):
-                         trim_samples = samples[-length:]
+                         spec.append(samples[-length:])
                     else:
-                         trim_samples = samples[left_sample:right_sample]
-                    spec.append(self.spectrogram(trim_samples).unsqueeze(0).repeat(3,1,1))
-                    del(trim_samples)
-               spec = torch.stack(spec, dim=1)
+                         spec.append(samples[left_sample:right_sample])
+               spec = torch.stack(spec, dim=0)
+               spec = self.spectrogram(spec).unsqueeze(0).repeat(3,1,1,1)
+          elif audio_type == 'all':
+               if right_sample > len(samples):
+                    right_sample = len(samples)
+               step = (right_sample-left_sample)//self.num_segment
+               samples = torch.stack([samples[i:i+step] for i in range(left_sample,right_sample,step)],dim=0)
+               spec = self._specgram(samples, resampling_rate=sample_rate)
+               spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
           else:
                samples = samples[left_sample:right_sample]
                spec = self.spectrogram(samples)

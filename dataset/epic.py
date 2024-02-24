@@ -33,7 +33,7 @@ class EpicVideoClsDataset(Dataset):
           self.args = args
           self.aug = False
           self.rand_erase = False
-          self.audio_type = 'all'
+          self.audio_type = 'all8'
           self.disable_video = False
           if self.mode in ['train']:
                self.aug = True
@@ -369,10 +369,18 @@ class EpicVideoClsDataset(Dataset):
           elif audio_type == 'all':
                if right_sample > len(samples):
                     right_sample = len(samples)
-               step = (right_sample-left_sample)//self.num_segment
+               step = int((right_sample-left_sample)//self.num_segment)
                samples = torch.stack([samples[i:i+step] for i in range(left_sample,right_sample,step)],dim=0)
                spec = self._specgram(samples, resampling_rate=sample_rate)
                spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
+          elif audio_type == 'all8':
+               if right_sample > len(samples):
+                    right_sample = len(samples)
+               step = step = int((right_sample-left_sample)//(self.num_segment/2))
+               samples = torch.stack([samples[i:i+step] for i in range(left_sample,right_sample,step)],dim=0)
+               spec = self._specgram(samples, resampling_rate=sample_rate)
+               spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
+               spec = torch.cat([spec[:, i:i+1].repeat(1, 2, 1, 1) for i in range(spec.size(1))], dim=1)
           else:
                samples = samples[left_sample:right_sample]
                spec = self.spectrogram(samples)

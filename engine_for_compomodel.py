@@ -201,7 +201,7 @@ def validation_one_epoch(args, data_loader, model, device):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Val:'
 
-    if True:
+    if args.narration:
         # ======== Narration Preprocessing ======== #
         nar_path = os.path.join(args.anno_path, "epic100_val_gpt2_xl.csv")
         cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
@@ -271,7 +271,7 @@ def final_test(args, data_loader, model, device, file):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
-    if True:
+    if args.narration:
         # ======== Narration Preprocessing ======== #
         nar_path = os.path.join(args.anno_path, "epic100_val_gpt2_xl.csv")
         cleaned = pd.read_csv(nar_path, header=0, delimiter=',')

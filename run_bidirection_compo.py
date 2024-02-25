@@ -553,7 +553,7 @@ def main(args, ds_init):
             exit(0)
         
 
-    if False:
+    if True:
         # ======== Narration Preprocessing ======== #
         nar_path = os.path.join(args.anno_path, "epic100_train_gpt2_xl.csv")
         cleaned = pd.read_csv(nar_path, header=0, delimiter=',')

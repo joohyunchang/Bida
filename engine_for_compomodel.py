@@ -86,7 +86,6 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         action_target = (targets[:,1] * 1000) + targets[:,0]
         batch_size = samples.shape[0]
         captions = None
-        nar_list = None
         if nar_list is not None:
             # captions = [random.choice(nar_list[id]) for id in ids]
             captions = [random.choice(nar_list[id]).strip('#C C') for id in ids]
@@ -202,7 +201,7 @@ def validation_one_epoch(args, data_loader, model, device):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Val:'
 
-    if False:
+    if True:
         # ======== Narration Preprocessing ======== #
         nar_path = os.path.join(args.anno_path, "epic100_val_gpt2_xl.csv")
         cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
@@ -272,7 +271,7 @@ def final_test(args, data_loader, model, device, file):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
-    if False:
+    if True:
         # ======== Narration Preprocessing ======== #
         nar_path = os.path.join(args.anno_path, "epic100_val_gpt2_xl.csv")
         cleaned = pd.read_csv(nar_path, header=0, delimiter=',')

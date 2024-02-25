@@ -237,7 +237,7 @@ def validation_one_epoch(args, data_loader, model, device):
             if nar_list is not None:
                 # captions = [random.choice(nar_list[nar]) for nar in batch[2]]
                 captions = [random.choice(nar_list[nar]).strip('#C C') for nar in batch[2]]
-            output_noun, output_verb = model(samples, captions, spec=spec)
+            output_noun, output_verb = model(samples, caption=captions, spec=spec)
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])
             
@@ -312,7 +312,7 @@ def final_test(args, data_loader, model, device, file):
             if nar_list is not None:
                 # captions = [random.choice(nar_list[nar]) for nar in batch[2]]
                 captions = [random.choice(nar_list[nar]).strip('#C C') for nar in batch[2]]
-            output_noun, output_verb = model(samples, captions, spec=spec)
+            output_noun, output_verb = model(samples, caption=captions, spec=spec)
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])
 

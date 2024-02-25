@@ -172,9 +172,263 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
         return x
 
+class CrossAttentionS2Audio(nn.Module):
+    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
+        super().__init__()
+        
+        # add for cross-attn
+        self.num_frames = num_frames//2
+        self.num_head = n_head
+        head_dim = audio_dim // self.num_head
+        self.scale = head_dim ** -0.5
+        all_head_dim = head_dim * self.num_head
+        self.attn_all_frame = attn_all_frame
+        if not attn_all_frame:
+            self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.audio_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+        else:
+            self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+        
+        self.q = nn.Linear(audio_dim, all_head_dim, bias=False)
+        self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
+        self.kv = nn.Linear(dim, all_head_dim * 2, bias=False) # 197 tokens(cls+patch) * num_frames
+        self.kv_bias = nn.Parameter(torch.zeros(all_head_dim * 2))
+        
+        self.proj = nn.Linear(all_head_dim, audio_dim)
+    
+    def s2audio_cross_attn(self, s_x, audio): # s_x=[n (b t) d], t_x=[b (t n) d], text=[m=77 b d]
+        t = self.num_frames
+        s_x_pat = s_x[1:, :, :]
+        audio_cls, audio_pat = audio[:1, :, :], audio[1:, :, :]
+        if not self.attn_all_frame:
+            s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
+            s_x_pat = s_x_pat + self.clip_space_pos
+            audio_pat = rearrange(audio_pat, 'n b d -> b n d') # batch -> token
+            audio_pat = audio_pat + self.audio_space_pos
+        else:
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            s_x_pat = s_x_pat + self.clip_st_pos
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            audio_pat = audio_pat + self.audio_st_pos
+        
+        q = F.linear(input=audio_pat, weight=self.q.weight, bias=self.q_bias)
+        q = rearrange(q, 'b n (h d) -> b h n d', h=self.num_head)
+        kv = F.linear(input=s_x_pat, weight=self.kv.weight, bias=self.kv_bias)
+        kv = rearrange(kv, 'b n (e h d) -> e b h n d',e=2, h=self.num_head)
+        k, v = kv[0], kv[1]
+        
+        q = q * self.scale
+        attn = (q @ k.transpose(-2, -1))
+        
+        attn = attn.softmax(dim=-1)
+        
+        audio_pat = (attn @ v)
+        audio_pat = rearrange(audio_pat, 'b h n d -> b n (h d)')
+        audio_pat = self.proj(audio_pat)
+        if not self.attn_all_frame:
+            audio_pat = rearrange(audio_pat, 'b n d -> n b d')
+        else:
+            audio_pat = rearrange(audio_pat, 'b (n t) d -> n (b t) d', t=t)
+        audio = torch.cat([audio_cls, audio_pat], dim=0)
+        return audio
+    
+    def forward(self, s_x: torch.Tensor, audio: torch.Tensor):
+        return self.s2audio_cross_attn(s_x, audio)
+    
+# Audio to spatial attention module.
+class CrossAttentionAudio2S(nn.Module):
+    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, attn_all_frame=False, attn_mask: torch.Tensor = None):
+        super().__init__()
+        
+        # add for cross-attn
+        self.num_frames = num_frames//2
+        self.num_head = n_head
+        head_dim = dim // self.num_head
+        self.scale = head_dim ** -0.5
+        all_head_dim = head_dim * self.num_head
+        self.attn_all_frame = attn_all_frame
+        if not attn_all_frame:
+            self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.audio_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+        else:
+            self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+        
+        self.q = nn.Linear(dim, all_head_dim, bias=False)
+        self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
+        self.kv = nn.Linear(audio_dim, all_head_dim * 2, bias=False) # 197 tokens(cls+patch) * num_frames
+        self.kv_bias = nn.Parameter(torch.zeros(all_head_dim * 2))
+        
+        self.proj = nn.Linear(all_head_dim, dim)
+    
+    def audio2s_cross_attn(self, s_x, audio): # s_x=[n (b t) d], t_x=[b (t n) d], text=[m=77 b d]
+        t = self.num_frames
+        s_x_cls, s_x_pat = s_x[:1,:,:], s_x[1:, :, :]
+        audio_pat = audio[1:, :, :]
+        if not self.attn_all_frame:
+            s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
+            s_x_pat = s_x_pat + self.clip_space_pos
+            audio_pat = rearrange(audio_pat, 'n b d -> b n d') # batch -> token
+            audio_pat = audio_pat + self.audio_space_pos
+        else:
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            s_x_pat = s_x_pat + self.clip_st_pos
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            audio_pat = audio_pat + self.audio_st_pos
+        
+        q = F.linear(input=s_x_pat, weight=self.q.weight, bias=self.q_bias)
+        q = rearrange(q, 'b n (h d) -> b h n d', h=self.num_head)
+        kv = F.linear(input=audio_pat, weight=self.kv.weight, bias=self.kv_bias)
+        kv = rearrange(kv, 'b m (e h d) -> e b h m d',e=2, h=self.num_head)
+        k, v = kv[0], kv[1]
+        
+        q = q * self.scale
+        attn = (q @ k.transpose(-2, -1))
+        
+        attn = attn.softmax(dim=-1)
+        
+        x_pat = (attn @ v)
+        x_pat = rearrange(x_pat, 'b h n d -> b n (h d)')
+        x_pat = self.proj(x_pat)
+        if not self.attn_all_frame:
+            x_pat = rearrange(x_pat, 'b n d -> n b d')
+        else:
+            x_pat = rearrange(x_pat, 'b (n t) d -> n (b t) d', t=t)
+        s_x = torch.cat([s_x_cls, x_pat], dim=0)
+        return s_x
+
+    def forward(self, s_x: torch.Tensor, audio: torch.Tensor):
+        return self.audio2s_cross_attn(s_x, audio)
+    
+# temporal to Audio attention module.
+class CrossAttentionT2Audio(nn.Module):
+    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
+        super().__init__()
+        
+        # add for cross-attn
+        self.num_frames = num_frames//2
+        self.num_head = n_head
+        head_dim = audio_dim // self.num_head
+        self.scale = head_dim ** -0.5
+        all_head_dim = head_dim * self.num_head
+        self.attn_all_frame = attn_all_frame
+        if not attn_all_frame:
+            self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.audio_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+        else:
+            self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+        
+        self.q = nn.Linear(audio_dim, all_head_dim, bias=False)
+        self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
+        self.kv = nn.Linear(dim, all_head_dim * 2, bias=False) # 197 tokens(cls+patch) * num_frames
+        self.kv_bias = nn.Parameter(torch.zeros(all_head_dim * 2))
+        
+        self.proj = nn.Linear(all_head_dim, audio_dim)
+    
+    def t2audio_cross_attn(self, t_x, audio): # s_x=[n (b t) d], t_x=[b (t n) d], text=[m=77 b d]
+        t = self.num_frames
+        n = t_x.shape[1] // t
+        audio_cls, audio_pat = audio[:1, :, :], audio[1:, :, :]
+        if not self.attn_all_frame:
+            t_x = rearrange(t_x, 'b (t n) d -> (b t) n d', t=t)
+            t_x = t_x + self.vmae_space_pos
+            audio_pat = rearrange(audio_pat, 'n b d -> b n d') # batch -> token
+            audio_pat = audio_pat + self.audio_space_pos
+        else:
+            t_x = t_x + self.vmae_st_pos
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            audio_pat = audio_pat + self.audio_st_pos
+        
+        q = F.linear(input=audio_pat, weight=self.q.weight, bias=self.q_bias)
+        q = rearrange(q, 'b n (h d) -> b h n d', h=self.num_head)
+        kv = F.linear(input=t_x, weight=self.kv.weight, bias=self.kv_bias)
+        kv = rearrange(kv, 'b n (e h d) -> e b h n d',e=2, h=self.num_head)
+        k, v = kv[0], kv[1]
+        
+        q = q * self.scale
+        attn = (q @ k.transpose(-2, -1))
+        
+        attn = attn.softmax(dim=-1)
+        
+        audio_pat = (attn @ v)
+        audio_pat = rearrange(audio_pat, 'b h n d -> b n (h d)')
+        audio_pat = self.proj(audio_pat)
+        if not self.attn_all_frame:
+            audio_pat = rearrange(audio_pat, 'b n d -> n b d')
+        else:
+            audio_pat = rearrange(audio_pat, 'b (n t) d -> n (b t) d', t=t)
+        audio = torch.cat([audio_cls, audio_pat], dim=0)
+        return audio
+
+    def forward(self, t_x: torch.Tensor, audio: torch.Tensor,):
+        return self.t2audio_cross_attn(t_x, audio)
+    
+# Audio to temporal cross attention module.
+class CrossAttentionAudio2T(nn.Module):
+    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
+        super().__init__()
+
+        # add for cross-attn
+        self.num_frames = num_frames//2
+        self.num_head = n_head
+        head_dim = dim // self.num_head
+        self.scale = head_dim ** -0.5
+        all_head_dim = head_dim * self.num_head
+        self.attn_all_frame = attn_all_frame
+        if not attn_all_frame:
+            self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.audio_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+        else:
+            self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+        
+        self.q = nn.Linear(dim, all_head_dim, bias=False)
+        self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
+        self.kv = nn.Linear(audio_dim, all_head_dim * 2, bias=False) # 197 tokens(cls+patch) * num_frames
+        self.kv_bias = nn.Parameter(torch.zeros(all_head_dim * 2))
+        
+        self.proj = nn.Linear(all_head_dim, dim)
+    
+    def audio2t_cross_attn(self, t_x, audio): # s_x=[n (b t) d], t_x=[b (t n) d], text=[m=77 b d]
+        t = self.num_frames
+        n = t_x.shape[1] // t
+        audio_pat = audio[1:, :, :]
+        if not self.attn_all_frame:
+            t_x = rearrange(t_x, 'b (t n) d -> (b t) n d', t=t)
+            t_x = t_x + self.vmae_space_pos
+            audio_pat = rearrange(audio_pat, 'n b d -> b n d') # batch -> token
+            audio_pat = audio_pat + self.audio_space_pos
+        else:
+            t_x = t_x + self.vmae_st_pos
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            audio_pat = audio_pat + self.audio_st_pos
+        
+        q = F.linear(input=t_x, weight=self.q.weight, bias=self.q_bias)
+        q = rearrange(q, 'b n (h d) -> b h n d', h=self.num_head)
+        kv = F.linear(input=audio_pat, weight=self.kv.weight, bias=self.kv_bias)
+        kv = rearrange(kv, 'b n (e h d) -> e b h n d',e=2, h=self.num_head)
+        k, v = kv[0], kv[1]
+        
+        q = q * self.scale
+        attn = (q @ k.transpose(-2, -1))
+        
+        attn = attn.softmax(dim=-1)
+        
+        t_x = (attn @ v)
+        t_x = rearrange(t_x, 'b h t d -> b t (h d)')
+        t_x = self.proj(t_x)
+        if not self.attn_all_frame:
+            t_x = rearrange(t_x, '(b t) n d -> b (t n) d', t=t)
+        return t_x
+
+    def forward(self, t_x: torch.Tensor, audio: torch.Tensor,):
+        return self.audio2t_cross_attn(t_x, audio)
+
 # spatial to text attention module.
 class CrossAttentionS2Text(nn.Module):
-    def __init__(self, dim: int, text_dim: int, n_head: int, num_frames: int, attn_mask: torch.Tensor = None):
+    def __init__(self, dim: int, text_dim: int, n_head: int, num_frames: int, attn_all_frame = True, attn_mask: torch.Tensor = None):
         super().__init__()
         
         # add for cross-attn
@@ -183,7 +437,7 @@ class CrossAttentionS2Text(nn.Module):
         head_dim = text_dim // self.num_head
         self.scale = head_dim ** -0.5
         all_head_dim = head_dim * self.num_head
-        attn_all_frame = True
+        self.attn_all_frame = attn_all_frame
         if not attn_all_frame:
             self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
         else:
@@ -199,8 +453,7 @@ class CrossAttentionS2Text(nn.Module):
     def s2text_cross_attn(self, s_x, text): # s_x=[n (b t) d], t_x=[b (t n) d], text=[m=77 b d]
         t = self.num_frames
         s_x_pat = s_x[1:, :, :]
-        attn_all_frame = True
-        if not attn_all_frame:
+        if not self.attn_all_frame:
             s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
             s_x_pat = s_x_pat + self.clip_space_pos
             text = rearrange(text, 'm b d -> b m d')
@@ -225,7 +478,7 @@ class CrossAttentionS2Text(nn.Module):
         text = (attn @ v)
         text = rearrange(text, 'b h m d -> b m (h d)')
         text = self.proj(text)
-        if not attn_all_frame:
+        if not self.attn_all_frame:
             text = rearrange(text, '(b t) m d -> b t m d', t=t)
             text = text.mean(dim=1)
         text = rearrange(text, 'b m d -> m b d')
@@ -236,7 +489,7 @@ class CrossAttentionS2Text(nn.Module):
 
 # temporal to text attention module.
 class CrossAttentionT2Text(nn.Module):
-    def __init__(self, dim: int, text_dim: int, n_head: int, num_frames: int, attn_mask: torch.Tensor = None):
+    def __init__(self, dim: int, text_dim: int, n_head: int, num_frames: int, attn_all_frame = True, attn_mask: torch.Tensor = None):
         super().__init__()
         
         # add for cross-attn
@@ -245,7 +498,7 @@ class CrossAttentionT2Text(nn.Module):
         head_dim = text_dim // self.num_head
         self.scale = head_dim ** -0.5
         all_head_dim = head_dim * self.num_head
-        attn_all_frame = True
+        self.attn_all_frame = attn_all_frame
         if not attn_all_frame:
             self.vmae_time_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
         else:
@@ -261,8 +514,7 @@ class CrossAttentionT2Text(nn.Module):
     def t2text_cross_attn(self, t_x, text): # s_x=[n (b t) d], t_x=[b (t n) d], text=[m=77 b d]
         t = self.num_frames
         n = t_x.shape[1] // t
-        attn_all_frame = True
-        if not attn_all_frame:
+        if not self.attn_all_frame:
             t_x = rearrange(t_x, 'b (t n) d -> (b n) t d', t=t)
             t_x = t_x + self.vmae_time_pos
             text = rearrange(text, 'm b d -> b m d')
@@ -286,7 +538,7 @@ class CrossAttentionT2Text(nn.Module):
         text = (attn @ v)
         text = rearrange(text, 'b h m d -> b m (h d)')
         text = self.proj(text)
-        if not attn_all_frame:
+        if not self.attn_all_frame:
             text = rearrange(text, '(b n) m d -> b n m d', n=n)
             text = text.mean(dim=1)
         text = rearrange(text, 'b m d -> m b d')
@@ -381,7 +633,7 @@ class CrossAttentionText2T(nn.Module):
         attn = attn.softmax(dim=-1)
         
         t_x = (attn @ v)
-        t_x = rearrange(t_x, 'b h n d -> b n (h d)')
+        t_x = rearrange(t_x, 'b h t d -> b t (h d)')
         t_x = self.proj(t_x)
         return t_x
 
@@ -528,6 +780,18 @@ class B_CAST(nn.Module):
             self.l2r_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
             self.r2l_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames)
             self.cross_r_up = nn.Linear(dim//self.down_ratio, dim)
+        elif type == 's-audio':
+            self.cross_r_down = nn.Linear(text_dim, text_dim//self.down_ratio)
+            self.ln_r_cross = norm_layer(text_dim//self.down_ratio)
+            self.l2r_cross = CrossAttentionS2Audio(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.r2l_cross = CrossAttentionAudio2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.cross_r_up = nn.Linear(text_dim//self.down_ratio, text_dim)
+        elif type == 't-audio':
+            self.cross_r_down = nn.Linear(text_dim, text_dim//self.down_ratio)
+            self.ln_r_cross = norm_layer(text_dim//self.down_ratio)
+            self.l2r_cross = CrossAttentionT2Audio(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.r2l_cross = CrossAttentionAudio2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.cross_r_up = nn.Linear(text_dim//self.down_ratio, text_dim)
         self.cross_l_up = nn.Linear(dim//self.down_ratio, dim)
             
     def forward(self, l, r):
@@ -542,7 +806,7 @@ class B_CAST(nn.Module):
 class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None,
-                 text_dim=512, text_num_heads=8, use_Adapter=False, CA=[i for i in range(12)]):
+                 text_dim=512, text_num_heads=8, use_Adapter=False, CA=[i for i in range(12)], audio_enabled=False):
         super().__init__()
         self.num_layer = num_layer
         self.CA = CA
@@ -552,6 +816,7 @@ class Block(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.act = act_layer()
         self.use_Adapter = use_Adapter
+        self.audio_enabled = audio_enabled
         
         ###################################### MHSA code #####################################
         ############################ AIM MHSA ###########################
@@ -569,8 +834,9 @@ class Block(nn.Module):
         ##################################################################
         
         ############################ CLIP TEXT MHSA ######################
-        self.clip_text_ln_1 = LayerNorm(text_dim)
-        self.clip_text_attn = nn.MultiheadAttention(text_dim, text_num_heads)
+        if not audio_enabled:
+            self.clip_text_ln_1 = LayerNorm(text_dim)
+            self.clip_text_attn = nn.MultiheadAttention(text_dim, text_num_heads)
         if self.use_Adapter:
             self.Text_Adapter = Adapter(text_dim)
         ##################################################################
@@ -579,26 +845,13 @@ class Block(nn.Module):
         ###################################### Cross attention ####################################
         self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t')
         if self.num_layer in self.CA:
-            self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text')
-            self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text')
+            if audio_enabled:
+                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio')
+                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio')
+            else:
+                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text')
+                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text')
         
-        # self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
-        # self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
-        # self.cross_text_down = nn.Linear(text_dim, text_dim//self.down_ratio)
-        # self.ln_s_cross = norm_layer(dim//self.down_ratio)
-        # self.ln_t_cross = norm_layer(dim//self.down_ratio)
-        # self.ln_text_cross = norm_layer(text_dim//self.down_ratio)
-        # self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames)
-        # self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
-        # self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
-        # self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
-        # self.cross_text_up = nn.Linear(text_dim//self.down_ratio, text_dim)
-        
-        # if self.num_layer in CA:
-        #     self.s2text_cross = CrossAttentionS2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-        #     self.t2text_cross = CrossAttentionT2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-        #     self.text2s_cross = CrossAttentionText2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-        #     self.text2t_cross = CrossAttentionText2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
         ###########################################################################################
         
         ###################################### FFN code #########################################
@@ -620,12 +873,13 @@ class Block(nn.Module):
         #####################################################################
         
         ############################ CLIP TEXT FFN ##########################
-        self.clip_text_ln_2 = LayerNorm(text_dim)
-        self.clip_text_mlp = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(text_dim, text_dim * 4)),
-            ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(text_dim * 4, text_dim))
-        ]))
+        if not audio_enabled:
+            self.clip_text_ln_2 = LayerNorm(text_dim)
+            self.clip_text_mlp = nn.Sequential(OrderedDict([
+                ("c_fc", nn.Linear(text_dim, text_dim * 4)),
+                ("gelu", QuickGELU()),
+                ("c_proj", nn.Linear(text_dim * 4, text_dim))
+            ]))
         if self.use_Adapter:
             self.Text_MLP_Adapter = Adapter(text_dim, skip_connect=False)
         self.attn_mask = None
@@ -654,10 +908,16 @@ class Block(nn.Module):
         # VMAE Time MHSA
         t_x = t_x + self.T_Adapter(self.attn(self.norm1(t_x)))
         # CLIP Text MHSA
-        if self.use_Adapter:
-            text = text + self.Text_Adapter(self.text_attention(self.clip_text_ln_1(text)))
+        if self.audio_enabled:
+            if self.use_Adapter:
+                text = text + self.Text_Adapter(self.attention(self.clip_ln_1(text)))
+            else:
+                text = text + self.attention(self.clip_ln_1(text))
         else:
-            text = text + self.text_attention(self.clip_text_ln_1(text))
+            if self.use_Adapter:
+                text = text + self.Text_Adapter(self.text_attention(self.clip_text_ln_1(text)))
+            else:
+                text = text + self.text_attention(self.clip_text_ln_1(text))
         ########################################################################
         
         ############################ Cross Forward #############################
@@ -665,24 +925,6 @@ class Block(nn.Module):
         if self.num_layer in self.CA:
             s_x, text = self.s_text_b_cast(s_x, text)
             t_x, text = self.t_text_b_cast(t_x, text)
-        
-        # if self.num_layer in self.CA:
-        #     n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
-        #     n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
-        #     n_text = self.ln_text_cross(self.cross_text_down(text))
-        #     c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x) + self.text2s_cross(n_s_x, n_text)))
-        #     c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x) + self.text2t_cross(n_t_x, n_text)))
-        #     n_text = self.cross_text_up(self.act(self.s2text_cross(n_s_x, n_text) + self.t2text_cross(n_t_x, n_text)))
-        #     s_x = s_x + self.drop_path(c_s_x)
-        #     t_x = t_x + self.drop_path(c_t_x)
-        #     text = text + self.drop_path(n_text)
-        # else:
-        #     n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
-        #     n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
-        #     c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x)))
-        #     c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x)))
-        #     s_x = s_x + self.drop_path(c_s_x)
-        #     t_x = t_x + self.drop_path(c_t_x)
         #########################################################################
         
         ############################ FFN Forward ##################################
@@ -692,11 +934,18 @@ class Block(nn.Module):
         t_xn = self.norm2(t_x)
         t_x = t_x + self.mlp(t_xn) + self.drop_path(self.scale * self.T_MLP_Adapter(t_xn))
         
-        text_xn = self.clip_text_ln_2(text)
-        if self.use_Adapter:
-            text = text + self.clip_text_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+        if self.audio_enabled:
+            text_xn = self.clip_ln_2(text)
+            if self.use_Adapter:
+                text = text + self.clip_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+            else:
+                text = text + self.clip_mlp(text_xn)
         else:
-            text = text + self.clip_text_mlp(text_xn)
+            text_xn = self.clip_text_ln_2(text)
+            if self.use_Adapter:
+                text = text + self.clip_text_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+            else:
+                text = text + self.clip_text_mlp(text_xn)
         ############################################################################
         
         return s_x, t_x, text
@@ -758,8 +1007,11 @@ class STCrossTransformer(nn.Module):
                  text_num_heads = 8,
                  vocab_size = 49408,
                  context_length = 77,
+                 audio_enabled = False,
                  prefix = None,
                  postfix = None,
+                 CA = 9,
+                 output_text_dim = 512,
                  use_textF = True):
         super().__init__()
         self.num_classes = num_classes
@@ -772,28 +1024,37 @@ class STCrossTransformer(nn.Module):
         self.text_dim = text_dim
         self.prefix = prefix
         self.postfix = postfix
+        self.audio_enabled = audio_enabled
         
-        self.context_length = context_length
-        self.prompt_embedding = torch.nn.Embedding(context_length, self.text_dim)
-        nn.init.normal_(self.prompt_embedding.weight, std=0.01)
-        self.vocab_size = vocab_size
-        self.clip_text_token_embedding = nn.Embedding(vocab_size, text_dim)
-        self.clip_text_positional_embedding = nn.Parameter(torch.empty(self.context_length, text_dim))
-        self.clip_text_ln_final = LayerNorm(text_dim)
-        self.clip_text_text_projection = nn.Parameter(torch.empty(text_dim, text_dim))
+        if not audio_enabled:
+            self.context_length = context_length
+            self.prompt_embedding = torch.nn.Embedding(context_length, self.text_dim)
+            nn.init.normal_(self.prompt_embedding.weight, std=0.01)
+            self.vocab_size = vocab_size
+            self.clip_text_token_embedding = nn.Embedding(vocab_size, text_dim)
+            self.clip_text_positional_embedding = nn.Parameter(torch.empty(self.context_length, text_dim))
+            self.clip_text_ln_final = LayerNorm(text_dim)
+            self.clip_text_text_projection = nn.Parameter(torch.empty(text_dim, output_text_dim))
         
-        # self.text_blocks = nn.ModuleList([ResidualAttentionBlock(text_dim, text_num_heads) for _ in range(depth)])
-        
-        nn.init.normal_(self.clip_text_token_embedding.weight, std=0.02)
-        nn.init.normal_(self.clip_text_positional_embedding, std=0.01)
-        nn.init.normal_(self.clip_text_text_projection, std=self.text_dim ** -0.5)
+            # self.text_blocks = nn.ModuleList([ResidualAttentionBlock(text_dim, text_num_heads) for _ in range(depth)])
+            nn.init.normal_(self.clip_text_token_embedding.weight, std=0.02)
+            nn.init.normal_(self.clip_text_positional_embedding, std=0.01)
+            nn.init.normal_(self.clip_text_text_projection, std=self.text_dim ** -0.5)
+        else:
+            text_scale = text_dim ** -0.5
+            # self.clip_text_conv1 = nn.Conv2d(in_channels=3, out_channels=text_scale, kernel_size=patch_size, stride=patch_size, bias=False)
+            # self.clip_text_class_embedding = nn.Parameter(text_scale * torch.randn(text_scale))
+            self.clip_text_positional_embedding = nn.Parameter(text_scale * torch.randn((img_size // patch_size) ** 2 + 1, text_dim))
+            # self.clip_text_ln_pre = LayerNorm(text_scale)
+            # self.clip_text_ln_final = LayerNorm(text_dim)
+            
         
         # abliation study 용
         use_Adapter = True
         self.split_projection = False
         self.use_videoF = True
         self.use_textF = True
-        CA = [i for i in range(9, 12)]
+        CA = [i for i in range(CA, 12)]
         # ==============================================================================================================
         
         self.patch_embed = PatchEmbed(
@@ -814,13 +1075,12 @@ class STCrossTransformer(nn.Module):
 
         self.pos_drop = nn.Dropout(p=drop_rate)
 
-
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
-                init_values=init_values, num_layer=i, text_num_heads=text_num_heads, use_Adapter=use_Adapter, CA=CA)
+                init_values=init_values, num_layer=i, text_dim=self.text_dim, text_num_heads=text_num_heads, use_Adapter=use_Adapter, CA=CA, audio_enabled=self.audio_enabled)
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
@@ -833,12 +1093,12 @@ class STCrossTransformer(nn.Module):
                 self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
             if self.use_textF:
                 self.text_noun_last_Adapter = nn.Sequential(OrderedDict([
-                    ("c_fc", nn.Linear(text_dim, text_dim // 4)),
+                    ("c_fc", nn.Linear(output_text_dim, text_dim // 4)),
                     ("gelu", QuickGELU()),
                     ("c_proj", nn.Linear(text_dim // 4, embed_dim))
                 ]))
                 self.text_verb_last_Adapter = nn.Sequential(OrderedDict([
-                    ("c_fc", nn.Linear(text_dim, text_dim // 4)),
+                    ("c_fc", nn.Linear(output_text_dim, text_dim // 4)),
                     ("gelu", QuickGELU()),
                     ("c_proj", nn.Linear(text_dim // 4, embed_dim))
                 ]))
@@ -914,7 +1174,7 @@ class STCrossTransformer(nn.Module):
     def reset_fcnorm(self):
         self.vmae_fc_norm = nn.LayerNorm(self.embed_dim)
 
-    def forward_features(self, x, caption=None, split_projection=False):
+    def forward_features(self, x, spec=None, caption=None, split_projection=False):
         B = x.shape[0]
         s_x = x[:, :, 1::2, :, :] # pick even frames
         ######################## AIM spatial path #########################
@@ -937,20 +1197,30 @@ class STCrossTransformer(nn.Module):
         #####################################################################
         
         ######################## CLIP TEXT path #############################
-        if caption is not None:
-            tokenized = torch.cat([tokenize(cap) for cap in caption]).to(x.device)
-            xlight = self.clip_text_token_embedding(tokenized).type_as(x)
+        if not self.audio_enabled:
+            if caption is not None:
+                tokenized = torch.cat([tokenize(cap) for cap in caption]).to(x.device)
+                xlight = self.clip_text_token_embedding(tokenized).type_as(x)
+            else:
+                text = " ".join(["X"] * (self.prefix + self.postfix))
+                tokenized = tokenize(text).to(x.device)
+                xlight = self.clip_text_token_embedding(tokenized).type_as(x).repeat([B, 1, 1])
+                text_embedding = self.prompt_embedding(torch.arange(77).to(self.prompt_embedding.weight.device))[None, :].repeat([B, 1, 1])
+                xlight[:,1:self.prefix+self.postfix+1,:] = text_embedding[:,1:self.prefix+self.postfix+1,:]
+            text_x = xlight + self.clip_text_positional_embedding
         else:
-            text = " ".join(["X"] * (self.prefix + self.postfix))
-            tokenized = tokenize(text).to(x.device)
-            xlight = self.clip_text_token_embedding(tokenized).type_as(x).repeat([B, 1, 1])
-            text_embedding = self.prompt_embedding(torch.arange(77).to(self.prompt_embedding.weight.device))[None, :].repeat([B, 1, 1])
-            xlight[:,1:self.prefix+self.postfix+1,:] = text_embedding[:,1:self.prefix+self.postfix+1,:]
-        text_x = xlight + self.clip_text_positional_embedding
-        text_x = text_x.permute(1, 0, 2)   # NLD -> LND
+            spec_x = spec[:, :, 1::2, :, :] # pick even frames
+            spec_x = rearrange(spec_x, 'b c t h w -> (b t) c h w')
+            spec_x = self.clip_conv1(spec_x) # shape = [*, embeddim, grid, grid]
+            spec_x = spec_x.reshape(spec_x.shape[0], spec_x.shape[1], -1) # [*, embeddim, grid**2]
+            spec_x = spec_x.permute(0, 2, 1) # shape[batch, patchnum, embeddim]
+            spec_x = torch.cat([self.clip_class_embedding.to(spec_x.dtype) + torch.zeros(spec_x.shape[0], 1, spec_x.shape[-1], dtype=spec_x.dtype, device=spec_x.device), spec_x], dim=1)
+            spec_x = spec_x + self.clip_text_positional_embedding.to(spec_x.dtype)
+            text_x = self.clip_ln_pre(spec_x)
         #####################################################################
         
         s_x = s_x.permute(1,0,2)
+        text_x = text_x.permute(1, 0, 2)   # NLD -> LND
         for blk in self.blocks:
             # s_x, t_x = blk(s_x, t_x, text)
             s_x, t_x, text_x = blk(s_x, t_x, text_x)
@@ -960,13 +1230,18 @@ class STCrossTransformer(nn.Module):
         s_x = rearrange(s_x, '(b t) n d -> b t n d', b=B)
         s_x = self.clip_ln_post(s_x[:,:,0,:].mean(1)) # all cls tokens avg pooling
         t_x = self.vmae_fc_norm(t_x.mean(1)) # all patch avg pooling
-        text_x = self.clip_text_ln_final(text_x)
-        eot = text_x[torch.arange(text_x.shape[0]), tokenized.argmax(dim=-1)] @ self.clip_text_text_projection
-        if split_projection:
-            sos = text_x[torch.arange(text_x.shape[0]), torch.zeros_like(tokenized.sum(-1))] @ self.clip_text_text_projection
-            return s_x, t_x, eot, sos
-        
-        return s_x, t_x, eot
+        if not self.audio_enabled:
+            text_x = self.clip_text_ln_final(text_x)
+            eot = text_x[torch.arange(text_x.shape[0]), tokenized.argmax(dim=-1)] @ self.clip_text_text_projection
+            if split_projection:
+                sos = text_x[torch.arange(text_x.shape[0]), torch.zeros_like(tokenized.sum(-1))] @ self.clip_text_text_projection
+                return s_x, t_x, eot, sos
+            
+            return s_x, t_x, eot
+        else:
+            spec_x = rearrange(spec_x, '(b t) n d -> b t n d', b=B)
+            spec_x = self.clip_ln_post(spec_x[:,:,0,:].mean(1))
+            return s_x, t_x, spec_x
     
     def encode_text(self, xlight, text):
         x = xlight + self.clip_text_positional_embedding
@@ -1025,10 +1300,13 @@ class STCrossTransformer(nn.Module):
             return text_embedding, prompt_texttoken
 
     
-    def forward(self, x, caption=None):
+    def forward(self, x, spec=None, caption=None):
         if self.composition:
-            if not self.split_projection:
-                s_x, t_x, text_x = self.forward_features(x, caption=caption)
+            if not self.split_projection or self.audio_enabled:
+                if self.audio_enabled:
+                    s_x, t_x, text_x = self.forward_features(x, spec=spec)
+                else:
+                    s_x, t_x, text_x = self.forward_features(x, caption=caption, split_projection=self.split_projection)
                 if self.use_videoF and self.use_textF:
                     s_x = self.noun_last_Adapter(s_x) + self.text_noun_last_Adapter(text_x)
                     t_x = self.verb_last_Adapter(t_x) + self.text_verb_last_Adapter(text_x)
@@ -1083,17 +1361,49 @@ def cast_Bsquare_base_patch16_224(pretrained=False, args=None, class_list=None, 
     return model
 
 @register_model
-def compo_cast_Bsquare_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=9, output_text_dim=512,
         prefix = 16, postfix = 16, **kwargs)
     return model
 
 @register_model
-def compo_cast_Bsquare_8_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
-        prefix = 4, postfix = 4, use_textF=False, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=0, output_text_dim=512, 
+        prefix = 16, postfix = 16, use_textF=False, **kwargs)
+    return model
+
+@register_model
+def compo_cast_Bsquare_CA9_lavila_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=9, output_text_dim=256, 
+        prefix = 16, postfix = 16, **kwargs)
+    return model
+
+@register_model
+def compo_cast_Bsquare_CA0_lavila_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=0, output_text_dim=256,
+        prefix = 16, postfix = 16, use_textF=False, **kwargs)
+    return model
+
+@register_model
+def compo_cast_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
+        prefix = 16, postfix = 16, **kwargs)
+    return model
+
+@register_model
+def compo_cast_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=0, output_text_dim=768,
+        prefix = 16, postfix = 16, **kwargs)
     return model

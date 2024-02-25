@@ -404,11 +404,25 @@ def load_bidir_weights(model, args):
         checkpoint_clip = lavila['state_dict']
         for key in checkpoint_clip:
             if key.startswith('module.transformer.'):
-                if key[23] == '.':
+                if key[30] == '.':
                     new_dict['text_blocks.'+ key[29] + '.clip_text_' + key[31:]] = checkpoint_clip[key]
+                    new_dict['blocks.'+ key[29] + '.clip_text_' + key[31:]] = checkpoint_clip[key]
                 else : # layer10 ~ 11 process
                     new_dict['text_blocks.'+ key[29:31] + '.clip_text_' + key[32:]] = checkpoint_clip[key]
+                    new_dict['blocks.'+ key[29:31] + '.clip_text_' + key[32:]] = checkpoint_clip[key]
             elif not key.startswith('module.visual.'):
+                new_dict['clip_text_' + key[7:]] = checkpoint_clip[key]
+        new_dict['clip_text_text_projection'] = checkpoint_clip['module.text_projection']
+    elif args.audio_path is not None:
+        for key in clip_all_keys:
+            if key.startswith('transformer.'):
+                if key[23] == '.':
+                    new_dict['text_blocks.'+ key[22] + '.clip_text_' + key[24:]] = checkpoint_clip[key]
+                    new_dict['blocks.'+ key[22] + '.clip_text_' + key[24:]] = checkpoint_clip[key]
+                else : # layer10 ~ 11 process
+                    new_dict['text_blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
+                    new_dict['blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
+            else:
                 new_dict['clip_text_' + key] = checkpoint_clip[key]
     else:
         checkpoint_clip = clip_checkpoint.state_dict()
@@ -416,8 +430,10 @@ def load_bidir_weights(model, args):
             if key.startswith('transformer.'):
                 if key[23] == '.':
                     new_dict['text_blocks.'+ key[22] + '.clip_text_' + key[24:]] = checkpoint_clip[key]
+                    new_dict['blocks.'+ key[22] + '.clip_text_' + key[24:]] = checkpoint_clip[key]
                 else : # layer10 ~ 11 process
                     new_dict['text_blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
+                    new_dict['blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
             elif not key.startswith('visual.'):
                 new_dict['clip_text_' + key] = checkpoint_clip[key]
                 

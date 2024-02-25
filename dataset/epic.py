@@ -33,7 +33,7 @@ class EpicVideoClsDataset(Dataset):
           self.args = args
           self.aug = False
           self.rand_erase = False
-          self.audio_type = 'all8'
+          self.audio_type = args.audio_type
           self.disable_video = False
           if self.mode in ['train']:
                self.aug = True
@@ -97,17 +97,20 @@ class EpicVideoClsDataset(Dataset):
           if self.mode == 'train':
                args = self.args
                scale_t = 1
-               
                if self.audio_path is not None:
-                    audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
-                    audio_sample = os.path.join(self.audio_path, audio_id + '.wav')
-                    start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
-                    end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
-                    try:
-                         spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, mode=self.mode)
-                    except:
-                         print("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
-                         spec = torch.random((3, 16, 224, 224))
+                    audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                    if os.path.exists(audio_trim_path):
+                         spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
+                    else:
+                         audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
+                         audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
+                         start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
+                         end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
+                         try:
+                              spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, mode=self.mode)
+                         except:
+                              print("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
+                              spec = torch.random((3, 16, 224, 224))
                else:
                     spec = {}
                
@@ -141,11 +144,15 @@ class EpicVideoClsDataset(Dataset):
           
           elif self.mode == 'validation':
                if self.audio_path is not None:
-                    audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
-                    audio_sample = os.path.join(self.audio_path, audio_id + '.wav')
-                    start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
-                    end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
-                    spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
+                    audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                    if os.path.exists(audio_trim_path):
+                         spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
+                    else:
+                         audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
+                         audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
+                         start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
+                         end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
+                         spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
                else:
                     spec = {}
                
@@ -166,11 +173,15 @@ class EpicVideoClsDataset(Dataset):
           
           elif self.mode == 'test':
                if self.audio_path is not None:
-                    audio_id = '_'.join(self.test_dataset[index].split('_')[:-1])
-                    audio_sample = os.path.join(self.audio_path, audio_id + '.wav')
-                    start_frame = self.audio_samples[self.test_dataset[index]]['start_frame']
-                    end_frame = self.audio_samples[self.test_dataset[index]]['stop_frame']
-                    spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
+                    audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                    if os.path.exists(audio_trim_path):
+                         spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
+                    else:
+                         audio_id = '_'.join(self.test_dataset[index].split('_')[:-1])
+                         audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
+                         start_frame = self.audio_samples[self.test_dataset[index]]['start_frame']
+                         end_frame = self.audio_samples[self.test_dataset[index]]['stop_frame']
+                         spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
                else:
                     spec = {}
                
@@ -316,6 +327,23 @@ class EpicVideoClsDataset(Dataset):
                     spec = spec[:,:,:224] if spec.shape[-1] > 224 else torch.concat([spec,spec[:,:,-expand:]],dim=-1)
                else:
                     spec = spec[:,:224] if spec.shape[-1] > 224 else torch.concat([spec,spec[:,-expand:]],dim=-1)
+          return spec
+     
+     def loadaudiofromfile(self, sample_path, audio_type='stack'):
+          # audio_trim_path = os.path.join(self.audio_path,'spec', audio_type,)
+          np_array = np.load(sample_path)
+          spec = torch.tensor(np_array)
+          if audio_type in ['stack','single']:
+               spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1) if audio_type == 'stack' else spec.unsqueeze(0).repeat(3, 1, 1)
+          elif audio_type == 'frame':
+               spec = self.spectrogram(spec).unsqueeze(0).repeat(3,1,1,1)
+          elif audio_type == 'all':
+               spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
+          elif audio_type == 'all8':
+               spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
+               spec = torch.cat([spec[:, i:i+1].repeat(1, 2, 1, 1) for i in range(spec.size(1))], dim=1)
+          else:
+               pass
           return spec
      
      def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test'):

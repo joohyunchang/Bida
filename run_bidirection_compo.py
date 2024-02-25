@@ -219,7 +219,8 @@ def get_args():
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
     parser.add_argument('--audio_path', default=None, type=str, help='audio path')
     parser.add_argument('--collate', action='store_true', default=False)
-    
+    parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack'],
+                        type=str, help='audio_trim_type')
     
     
     

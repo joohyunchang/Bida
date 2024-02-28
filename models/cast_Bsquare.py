@@ -173,11 +173,12 @@ class Attention(nn.Module):
         return x
 
 class CrossAttentionS2Audio(nn.Module):
-    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
+    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, spec_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
         super().__init__()
         
         # add for cross-attn
         self.num_frames = num_frames//2
+        self.spec_frames = spec_frames
         self.num_head = n_head
         head_dim = audio_dim // self.num_head
         self.scale = head_dim ** -0.5
@@ -188,7 +189,7 @@ class CrossAttentionS2Audio(nn.Module):
             self.audio_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
         else:
             self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
-            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * spec_frames, dim)))
         
         self.q = nn.Linear(audio_dim, all_head_dim, bias=False)
         self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -209,7 +210,7 @@ class CrossAttentionS2Audio(nn.Module):
         else:
             s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
             s_x_pat = s_x_pat + self.clip_st_pos
-            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
             audio_pat = audio_pat + self.audio_st_pos
         
         q = F.linear(input=audio_pat, weight=self.q.weight, bias=self.q_bias)
@@ -229,7 +230,7 @@ class CrossAttentionS2Audio(nn.Module):
         if not self.attn_all_frame:
             audio_pat = rearrange(audio_pat, 'b n d -> n b d')
         else:
-            audio_pat = rearrange(audio_pat, 'b (n t) d -> n (b t) d', t=t)
+            audio_pat = rearrange(audio_pat, 'b (n t) d -> n (b t) d', t=self.spec_frames)
         audio = torch.cat([audio_cls, audio_pat], dim=0)
         return audio
     
@@ -238,11 +239,12 @@ class CrossAttentionS2Audio(nn.Module):
     
 # Audio to spatial attention module.
 class CrossAttentionAudio2S(nn.Module):
-    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, attn_all_frame=False, attn_mask: torch.Tensor = None):
+    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, spec_frames: int, attn_all_frame=False, attn_mask: torch.Tensor = None):
         super().__init__()
         
         # add for cross-attn
         self.num_frames = num_frames//2
+        self.spec_frames = spec_frames
         self.num_head = n_head
         head_dim = dim // self.num_head
         self.scale = head_dim ** -0.5
@@ -253,7 +255,7 @@ class CrossAttentionAudio2S(nn.Module):
             self.audio_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
         else:
             self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
-            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * spec_frames, dim)))
         
         self.q = nn.Linear(dim, all_head_dim, bias=False)
         self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -274,7 +276,7 @@ class CrossAttentionAudio2S(nn.Module):
         else:
             s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
             s_x_pat = s_x_pat + self.clip_st_pos
-            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
             audio_pat = audio_pat + self.audio_st_pos
         
         q = F.linear(input=s_x_pat, weight=self.q.weight, bias=self.q_bias)
@@ -303,11 +305,12 @@ class CrossAttentionAudio2S(nn.Module):
     
 # temporal to Audio attention module.
 class CrossAttentionT2Audio(nn.Module):
-    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
+    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, spec_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
         super().__init__()
         
         # add for cross-attn
         self.num_frames = num_frames//2
+        self.spec_frames = spec_frames
         self.num_head = n_head
         head_dim = audio_dim // self.num_head
         self.scale = head_dim ** -0.5
@@ -318,7 +321,7 @@ class CrossAttentionT2Audio(nn.Module):
             self.audio_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
         else:
             self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
-            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * spec_frames, dim)))
         
         self.q = nn.Linear(audio_dim, all_head_dim, bias=False)
         self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -338,7 +341,7 @@ class CrossAttentionT2Audio(nn.Module):
             audio_pat = audio_pat + self.audio_space_pos
         else:
             t_x = t_x + self.vmae_st_pos
-            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
             audio_pat = audio_pat + self.audio_st_pos
         
         q = F.linear(input=audio_pat, weight=self.q.weight, bias=self.q_bias)
@@ -358,7 +361,7 @@ class CrossAttentionT2Audio(nn.Module):
         if not self.attn_all_frame:
             audio_pat = rearrange(audio_pat, 'b n d -> n b d')
         else:
-            audio_pat = rearrange(audio_pat, 'b (n t) d -> n (b t) d', t=t)
+            audio_pat = rearrange(audio_pat, 'b (n t) d -> n (b t) d', t=self.spec_frames)
         audio = torch.cat([audio_cls, audio_pat], dim=0)
         return audio
 
@@ -367,11 +370,12 @@ class CrossAttentionT2Audio(nn.Module):
     
 # Audio to temporal cross attention module.
 class CrossAttentionAudio2T(nn.Module):
-    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
+    def __init__(self, dim: int, audio_dim: int, n_head: int, num_frames: int, spec_frames: int, attn_all_frame = False, attn_mask: torch.Tensor = None):
         super().__init__()
 
         # add for cross-attn
         self.num_frames = num_frames//2
+        self.spec_frames = spec_frames
         self.num_head = n_head
         head_dim = dim // self.num_head
         self.scale = head_dim ** -0.5
@@ -382,7 +386,7 @@ class CrossAttentionAudio2T(nn.Module):
             self.audio_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
         else:
             self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
-            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((196 * spec_frames, dim)))
         
         self.q = nn.Linear(dim, all_head_dim, bias=False)
         self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -402,7 +406,7 @@ class CrossAttentionAudio2T(nn.Module):
             audio_pat = audio_pat + self.audio_space_pos
         else:
             t_x = t_x + self.vmae_st_pos
-            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
             audio_pat = audio_pat + self.audio_st_pos
         
         q = F.linear(input=t_x, weight=self.q.weight, bias=self.q_bias)
@@ -752,7 +756,7 @@ class CrossAttentionT2S(nn.Module):
 
 class B_CAST(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, down_ratio=2, text_dim=512, text_num_heads=8, 
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, type='s-text'):
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, type='s-text', spec_frames=8, attn_all_frame=True):
         super().__init__()
         self.num_frames = num_frames
         self.down_ratio = down_ratio
@@ -765,14 +769,14 @@ class B_CAST(nn.Module):
         if type == 's-text':
             self.cross_r_down = nn.Linear(text_dim, text_dim//self.down_ratio)
             self.ln_r_cross = norm_layer(text_dim//self.down_ratio)
-            self.l2r_cross = CrossAttentionS2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-            self.r2l_cross = CrossAttentionText2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.l2r_cross = CrossAttentionS2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames, attn_all_frame)
+            self.r2l_cross = CrossAttentionText2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames, attn_all_frame)
             self.cross_r_up = nn.Linear(text_dim//self.down_ratio, text_dim)
         elif type == 't-text':
             self.cross_r_down = nn.Linear(text_dim, text_dim//self.down_ratio)
             self.ln_r_cross = norm_layer(text_dim//self.down_ratio)
-            self.l2r_cross = CrossAttentionT2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-            self.r2l_cross = CrossAttentionText2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.l2r_cross = CrossAttentionT2Text(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames, attn_all_frame)
+            self.r2l_cross = CrossAttentionText2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames, attn_all_frame)
             self.cross_r_up = nn.Linear(text_dim//self.down_ratio, text_dim)
         elif type == 's-t':
             self.cross_r_down = nn.Linear(dim, dim//self.down_ratio)
@@ -783,14 +787,14 @@ class B_CAST(nn.Module):
         elif type == 's-audio':
             self.cross_r_down = nn.Linear(text_dim, text_dim//self.down_ratio)
             self.ln_r_cross = norm_layer(text_dim//self.down_ratio)
-            self.l2r_cross = CrossAttentionS2Audio(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-            self.r2l_cross = CrossAttentionAudio2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.l2r_cross = CrossAttentionS2Audio(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames, spec_frames, attn_all_frame)
+            self.r2l_cross = CrossAttentionAudio2S(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames, spec_frames, attn_all_frame)
             self.cross_r_up = nn.Linear(text_dim//self.down_ratio, text_dim)
         elif type == 't-audio':
             self.cross_r_down = nn.Linear(text_dim, text_dim//self.down_ratio)
             self.ln_r_cross = norm_layer(text_dim//self.down_ratio)
-            self.l2r_cross = CrossAttentionT2Audio(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
-            self.r2l_cross = CrossAttentionAudio2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames)
+            self.l2r_cross = CrossAttentionT2Audio(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames, spec_frames, attn_all_frame)
+            self.r2l_cross = CrossAttentionAudio2T(dim//self.down_ratio, text_dim//self.down_ratio, text_num_heads, num_frames, spec_frames, attn_all_frame)
             self.cross_r_up = nn.Linear(text_dim//self.down_ratio, text_dim)
         self.cross_l_up = nn.Linear(dim//self.down_ratio, dim)
             
@@ -806,7 +810,7 @@ class B_CAST(nn.Module):
 class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None,
-                 text_dim=512, text_num_heads=8, use_Adapter=False, CA=[i for i in range(12)], audio_enabled=False):
+                 text_dim=512, text_num_heads=8, use_Adapter=False, CA=[i for i in range(12)], audio_enabled=False, spec_frames=8, attn_all_frame=True):
         super().__init__()
         self.num_layer = num_layer
         self.CA = CA
@@ -846,11 +850,11 @@ class Block(nn.Module):
         self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t')
         if self.num_layer in self.CA:
             if audio_enabled:
-                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio')
-                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio')
+                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame)
+                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame)
             else:
-                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text')
-                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text')
+                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text', attn_all_frame=attn_all_frame)
+                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text', attn_all_frame=attn_all_frame)
         
         ###########################################################################################
         
@@ -1012,6 +1016,8 @@ class STCrossTransformer(nn.Module):
                  postfix = None,
                  CA = 9,
                  output_text_dim = 512,
+                 spec_frames=16,
+                 attn_all_frame=True,
                  use_textF = True):
         super().__init__()
         self.num_classes = num_classes
@@ -1025,6 +1031,7 @@ class STCrossTransformer(nn.Module):
         self.prefix = prefix
         self.postfix = postfix
         self.audio_enabled = audio_enabled
+        spec_frames = (spec_frames+1) // 2
         
         if not audio_enabled:
             self.context_length = context_length
@@ -1055,6 +1062,7 @@ class STCrossTransformer(nn.Module):
         self.use_videoF = True
         self.use_textF = True
         CA = [i for i in range(CA, 12)]
+        attn_all_frame = attn_all_frame
         # ==============================================================================================================
         
         self.patch_embed = PatchEmbed(
@@ -1080,7 +1088,8 @@ class STCrossTransformer(nn.Module):
             Block(
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
-                init_values=init_values, num_layer=i, text_dim=self.text_dim, text_num_heads=text_num_heads, use_Adapter=use_Adapter, CA=CA, audio_enabled=self.audio_enabled)
+                init_values=init_values, num_layer=i, text_dim=self.text_dim, text_num_heads=text_num_heads, use_Adapter=use_Adapter, CA=CA, audio_enabled=self.audio_enabled,
+                spec_frames=spec_frames, attn_all_frame=attn_all_frame)
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
@@ -1209,7 +1218,7 @@ class STCrossTransformer(nn.Module):
                 xlight[:,1:self.prefix+self.postfix+1,:] = text_embedding[:,1:self.prefix+self.postfix+1,:]
             text_x = xlight + self.clip_text_positional_embedding
         else:
-            spec_x = spec[:, :, 1::2, :, :] # pick even frames
+            spec_x = spec[:, :, 1::2, :, :] if spec.dim() == 5 else spec.unsqueeze(2)
             spec_x = rearrange(spec_x, 'b c t h w -> (b t) c h w')
             spec_x = self.clip_conv1(spec_x) # shape = [*, embeddim, grid, grid]
             spec_x = spec_x.reshape(spec_x.shape[0], spec_x.shape[1], -1) # [*, embeddim, grid**2]
@@ -1360,6 +1369,9 @@ def cast_Bsquare_base_patch16_224(pretrained=False, args=None, class_list=None, 
         prefix = 16, postfix = 16, split_prompt = args.split_prompt, **kwargs)
     return model
 
+
+# Text Bsquare
+
 @register_model
 def compo_cast_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
@@ -1376,6 +1388,9 @@ def compo_cast_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_l
         prefix = 16, postfix = 16, use_textF=False, **kwargs)
     return model
 
+
+# lavila text encoder
+
 @register_model
 def compo_cast_Bsquare_CA9_lavila_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
@@ -1389,15 +1404,18 @@ def compo_cast_Bsquare_CA0_lavila_base_patch16_224(pretrained=False, args=None, 
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=0, output_text_dim=256,
-        prefix = 16, postfix = 16, use_textF=False, **kwargs)
+        prefix = 16, postfix = 16, **kwargs)
     return model
+
+
+# audio 16 Spec
 
 @register_model
 def compo_cast_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
-        prefix = 16, postfix = 16, **kwargs)
+        prefix = 16, postfix = 16, attn_all_frame=False, **kwargs)
     return model
 
 @register_model
@@ -1405,5 +1423,24 @@ def compo_cast_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, c
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=0, output_text_dim=768,
-        prefix = 16, postfix = 16, **kwargs)
+        prefix = 16, postfix = 16, attn_all_frame=False, **kwargs)
+    return model
+
+
+# audio - single Spec
+
+@register_model
+def compo_cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, **kwargs)
+    return model
+
+@register_model
+def compo_cast_single_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=0, output_text_dim=768,
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, **kwargs)
     return model

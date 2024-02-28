@@ -173,18 +173,23 @@ class Attention(nn.Module):
     
 # spatial to temporal cross attention module.
 class CrossAttentionS2T(nn.Module):
-    def __init__(self, dim: int, n_head: int, num_frames: int, attn_mask: torch.Tensor = None):
+    def __init__(self, dim: int, n_head: int, num_frames: int, spec_frames=1, attn_all_frame = True, attn_mask: torch.Tensor = None):
         super().__init__()
 
         # add for cross-attn
-        self.num_frames = num_frames
+        self.num_frames = num_frames//2
+        self.spec_frames = spec_frames
         self.num_head = n_head
         head_dim = dim // self.num_head
         self.scale = head_dim ** -0.5
         all_head_dim = head_dim * self.num_head
-        self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
-        self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
-        
+        self.attn_all_frame = attn_all_frame
+        if not attn_all_frame:
+            self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+        else:
+            self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * spec_frames, dim)))
+            self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
 
         self.s2t_q = nn.Linear(dim, all_head_dim, bias=False)
         self.s2t_q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -197,12 +202,21 @@ class CrossAttentionS2T(nn.Module):
     
     def s2t_cross_attn(self, s_x, t_x): # s_x=[n (b t) d], t_x=[b n d]
         B, _, _ = t_x.shape
-        t = s_x.shape[1] // t_x.shape[0]
+        t = self.num_frames
         s_x_pat = s_x[1:, :, :]
-        s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
-        s_x_pat = s_x_pat + self.clip_space_pos
-        t_x = rearrange(t_x, 'b (t n) d -> (b t) n d', t=t)
-        t_x = t_x + self.vmae_space_pos
+        if not self.attn_all_frame:
+            s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
+            s_x_pat = s_x_pat + self.clip_space_pos
+            if self.spec_frames != self.num_frames:
+                exp = t // self.spec_frames
+                s_x_pat = s_x_pat.unsqueeze(1).expand([-1 , exp, -1, -1])
+                s_x_pat = rearrange(s_x_pat, 'b t n d -> (b t) n d')
+            t_x = rearrange(t_x, 'b (t n) d -> (b t) n d', t=t)
+            t_x = t_x + self.vmae_space_pos
+        else:
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
+            s_x_pat = s_x_pat + self.clip_st_pos
+            t_x = t_x + self.vmae_st_pos
         s2t_q_bias = self.s2t_q_bias
         s2t_kv_bias = self.s2t_kv_bias
         
@@ -220,7 +234,8 @@ class CrossAttentionS2T(nn.Module):
         t_x = (s2t_attn @ s2t_v)
         t_x = rearrange(t_x, 'b h t d -> b t (h d)')
         t_x = self.t2s_proj(t_x)
-        t_x = rearrange(t_x, '(b t) n d -> b (t n) d', b=B)
+        if not self.attn_all_frame:
+            t_x = rearrange(t_x, '(b t) n d -> b (t n) d', b=B)
         return t_x
 
     def forward(self, s_x: torch.Tensor, t_x: torch.Tensor):
@@ -229,16 +244,22 @@ class CrossAttentionS2T(nn.Module):
 
 # this codes from CLIP github(https://github.com/openai/CLIP)
 class CrossAttentionT2S(nn.Module):
-    def __init__(self, dim: int, n_head: int, num_frames: int, attn_mask: torch.Tensor = None):
+    def __init__(self, dim: int, n_head: int, num_frames: int, spec_frames=1, attn_all_frame = True, attn_mask: torch.Tensor = None):
         super().__init__()
 
-        self.num_frames = num_frames
+        self.num_frames = num_frames//2
+        self.spec_frames = spec_frames
         self.num_head = n_head
         head_dim = dim // self.num_head
         self.scale = head_dim ** -0.5
         all_head_dim = head_dim * self.num_head
-        self.clip_time_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
-        self.vmae_time_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
+        self.attn_all_frame = attn_all_frame
+        if not attn_all_frame:
+            self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+        else:
+            self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * spec_frames, dim)))
+            self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
         
         self.t2s_q = nn.Linear(dim, all_head_dim, bias=False) # 197 tokens(cls+patch) * num_frames
         self.t2s_q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -251,12 +272,21 @@ class CrossAttentionT2S(nn.Module):
     
     def t2s_cross_attn(self, s_x, t_x): # s_x=[n (b t) d], t_x=[b n d]
         B, _, _ = t_x.shape
-        t = s_x.shape[1] // t_x.shape[0]
+        t = self.num_frames
         s_x_cls, s_x_pat = s_x[0, :, :], s_x[1:, :, :]
-        s_x_pat = rearrange(s_x_pat, 'n (b t) d -> (b n) t d', b=B) # batch -> token
-        s_x_pat = s_x_pat + self.clip_time_pos
-        t_x = rearrange(t_x, 'b (t n) d -> (b n) t d', t=t)
-        t_x = t_x + self.vmae_time_pos
+        if not self.attn_all_frame:
+            s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
+            s_x_pat = s_x_pat + self.clip_space_pos
+            if self.spec_frames != self.num_frames:
+                exp = t // self.spec_frames
+                s_x_pat = s_x_pat.unsqueeze(1).expand([-1 , t, -1, -1])
+                s_x_pat = rearrange(s_x_pat, 'b t n d -> (b t) n d')
+            t_x = rearrange(t_x, 'b (t n) d -> (b t) n d', t=t)
+            t_x = t_x + self.vmae_space_pos
+        else:
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
+            s_x_pat = s_x_pat + self.clip_st_pos
+            t_x = t_x + self.vmae_st_pos
         t2s_q_bias = self.t2s_q_bias
         t2s_kv_bias = self.t2s_kv_bias
         
@@ -274,7 +304,14 @@ class CrossAttentionT2S(nn.Module):
         s_x_pat = (t2s_attn @ t2s_v)
         s_x_pat = rearrange(s_x_pat, 'b h n d -> b n (h d)')
         s_x_pat = self.t2s_proj(s_x_pat)
-        s_x_pat = rearrange(s_x_pat,'(b n) t d -> n (b t) d', b=B)
+        if not self.attn_all_frame:
+            if self.spec_frames != self.num_frames:
+                s_x_pat = rearrange(s_x_pat, '(b t) n d -> n t b d', t=t)
+                s_x_pat = s_x_pat.mean(dim=1)
+            else:
+                s_x_pat = rearrange(s_x_pat, 'b n d -> n b d')
+        else:
+            s_x_pat = rearrange(s_x_pat, 'b (n t) d -> n (b t) d', t=self.spec_frames)
         s_x = torch.cat([s_x_cls.unsqueeze(0), s_x_pat], dim=0)
         return s_x
 
@@ -283,9 +320,9 @@ class CrossAttentionT2S(nn.Module):
 
     
 class Block(nn.Module):
-
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None):
+                 drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None, 
+                 spec_frames=1, attn_all_frame=True, CA=0):
         super().__init__()
         self.num_layer = num_layer
         self.num_heads = num_heads
@@ -293,6 +330,7 @@ class Block(nn.Module):
         self.scale = 0.5
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.act = act_layer()
+        self.CA = CA
         
         ###################################### MHSA code #####################################
         ############################ AIM MHSA ###########################
@@ -310,14 +348,14 @@ class Block(nn.Module):
         ##################################################################
         #########################################################################################
         
-        if num_layer >= 0:
+        if num_layer >= self.CA:
             ###################################### Cross attention ####################################
             self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
             self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
             self.ln_s_cross = norm_layer(dim//self.down_ratio)
             self.ln_t_cross = norm_layer(dim//self.down_ratio)
-            self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames)
-            self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames)
+            self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame)
+            self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame)
             self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
             self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
             ###########################################################################################
@@ -360,7 +398,7 @@ class Block(nn.Module):
         t_x = t_x + self.T_Adapter(self.attn(self.norm1(t_x)))
         ########################################################################
         
-        if self.num_layer >= 0:
+        if self.num_layer >= self.CA:
             ############################ Cross Forward #############################
             n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
             n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
@@ -409,6 +447,7 @@ class STCrossTransformer(nn.Module):
                  composition=False,
                  fusion_method=None,
                  audio_enabled=False,
+                 spec_frames=1,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -429,6 +468,12 @@ class STCrossTransformer(nn.Module):
         self.clip_positional_embedding = nn.Parameter(scale * torch.randn((img_size // patch_size) ** 2 + 1, embed_dim))
         self.clip_ln_pre = LayerNorm(embed_dim)
 
+        ###################################
+        spec_frames = (spec_frames+1) //2
+        attn_all_frame=True
+        CA=0
+        ###################################
+
         if use_learnable_pos_emb:
             self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim))
         else:
@@ -443,7 +488,7 @@ class STCrossTransformer(nn.Module):
             Block(
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
-                init_values=init_values, num_layer=i)
+                init_values=init_values, num_layer=i, spec_frames=spec_frames, attn_all_frame=attn_all_frame, CA=CA)
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
@@ -588,23 +633,30 @@ class STCrossTransformer(nn.Module):
             x = self.head(x)
             return x
 
-@register_model
-def bidir_vit_base_patch16_224(pretrained=False, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, **kwargs)
-    return model
+# @register_model
+# def bidir_vit_base_patch16_224(pretrained=False, **kwargs):
+#     model = STCrossTransformer(
+#         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+#         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, **kwargs)
+#     return model
+
+# @register_model
+# def compo_bidir_vit_base_patch16_224(pretrained=False, **kwargs):
+#     model = STCrossTransformer(
+#         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+#         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
+#     return model
 
 @register_model
-def compo_bidir_vit_base_patch16_224(pretrained=False, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
-    return model
-
-@register_model
-def compo_audio_vit_base_patch16_224(pretrained=False, **kwargs):
+def compo_single_audio_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, **kwargs)
+    return model
+
+@register_model
+def compo_stacks_audio_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, spec_frames=16, **kwargs)
     return model

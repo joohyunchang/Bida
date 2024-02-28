@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 import util_tools.video_transforms as video_transforms 
 import util_tools.volume_transforms as volume_transforms
 import torchaudio
+import random
 
 class EpicVideoClsDataset(Dataset):
      def __init__(self, anno_path, data_path, mode='train', clip_len=8,
@@ -99,6 +100,7 @@ class EpicVideoClsDataset(Dataset):
                scale_t = 1
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                    audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
                     if os.path.exists(audio_trim_path):
                          spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
@@ -108,6 +110,8 @@ class EpicVideoClsDataset(Dataset):
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          try:
                               spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, mode=self.mode)
+                              if args.spec_augment:
+                                   spec = self.spec_augment(spec)
                          except:
                               print("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
                               spec = torch.random((3, 16, 224, 224))
@@ -145,6 +149,7 @@ class EpicVideoClsDataset(Dataset):
           elif self.mode == 'validation':
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                    audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
                     if os.path.exists(audio_trim_path):
                          spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
@@ -173,7 +178,8 @@ class EpicVideoClsDataset(Dataset):
           
           elif self.mode == 'test':
                if self.audio_path is not None:
-                    audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                    audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.test_dataset[index] + '.npy')
+                    audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
                     if os.path.exists(audio_trim_path):
                          spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
@@ -313,6 +319,34 @@ class EpicVideoClsDataset(Dataset):
                ),
                torchaudio.transforms.AmplitudeToDB()
           )
+     
+     # https://arxiv.org/abs/1904.08779
+     def spec_augment(self, feat, T = 70, F = 20, time_mask_num = 2, freq_mask_num = 2):
+          dim = feat.dim()
+          feat_size = feat.size(-1)
+          seq_len = feat.size(-2)
+
+          # time mask
+          for _ in range(time_mask_num):
+               t = np.random.uniform(low=0.0, high=T)
+               t = int(t)
+               t0 = random.randint(0, seq_len - t)
+               if dim == 2:
+                    feat[t0 : t0 + t, :] = 0
+               else:
+                    feat[:, t0 : t0 + t, :] = 0
+
+          # freq mask
+          for _ in range(freq_mask_num):
+               f = np.random.uniform(low=0.0, high=F)
+               f = int(f)
+               f0 = random.randint(0, feat_size - f)
+               if dim == 2:
+                    feat[:, f0 : f0 + f] = 0
+               else:
+                    feat[:, :, f0 : f0 + f] = 0
+
+          return feat
           
      def _specgram(self, audio, window_size=10, step_size=5, eps=1e-6, resampling_rate=24000, target_length=1.119):
           current_length = audio.shape[-1] / resampling_rate
@@ -333,7 +367,7 @@ class EpicVideoClsDataset(Dataset):
           # audio_trim_path = os.path.join(self.audio_path,'spec', audio_type,)
           np_array = np.load(sample_path)
           spec = torch.tensor(np_array)
-          if audio_type in ['stack','single']:
+          if audio_type == 'stack':
                spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1) if audio_type == 'stack' else spec.unsqueeze(0).repeat(3, 1, 1)
           elif audio_type == 'frame':
                spec = self.spectrogram(spec).unsqueeze(0).repeat(3,1,1,1)
@@ -341,7 +375,15 @@ class EpicVideoClsDataset(Dataset):
                spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
           elif audio_type == 'all8':
                spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
-               spec = torch.cat([spec[:, i:i+1].repeat(1, 2, 1, 1) for i in range(spec.size(1))], dim=1)
+               spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
+          elif audio_type in ['stacks','single']:
+               spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
+               stack_dim = spec.shape[1]
+               if audio_type == 'stacks':
+                    idx = np.round(np.linspace(0, stack_dim - 1, self.num_segment)).astype(int).tolist()
+                    spec = spec[:, idx, :, :]
+               else:
+                    spec = spec[:, (stack_dim-1)//2, :, :]
           else:
                pass
           return spec
@@ -353,6 +395,8 @@ class EpicVideoClsDataset(Dataset):
           right_sec = stop_frame / 60
           left_sample = int(round(left_sec * sample_rate))
           right_sample = int(round(right_sec * sample_rate))
+          if right_sample > len(samples):
+               right_sample = len(samples)
           length_sample = right_sample - left_sample
           length = int(round(1.119*sample_rate))
           if audio_type in ['stack','single']:
@@ -375,9 +419,7 @@ class EpicVideoClsDataset(Dataset):
                if average_duration > 0:
                     all_index += list(np.multiply(list(range(self.num_segment)), average_duration) + np.random.randint(average_duration, size=self.num_segment))
                else:
-                    all_index = list(range(15))
-                    all_index.extend(np.random.choice(range(len(all_index)), size=(16 - len(all_index)), replace=True))
-                    all_index = list(np.sort(all_index))
+                    all_index = np.round(np.linspace(0, (stop_frame - start_frame), self.num_segment)).astype(int).tolist()
                spec = []
                for idx in all_index:
                     centre_sec = (start_frame  + idx) /60
@@ -402,13 +444,31 @@ class EpicVideoClsDataset(Dataset):
                spec = self._specgram(samples, resampling_rate=sample_rate)
                spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
           elif audio_type == 'all8':
-               if right_sample > len(samples):
-                    right_sample = len(samples)
                step = step = int((right_sample-left_sample)//(self.num_segment/2))
                samples = torch.stack([samples[i:i+step] for i in range(left_sample,right_sample,step)],dim=0)
                spec = self._specgram(samples, resampling_rate=sample_rate)
                spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
-               spec = torch.cat([spec[:, i:i+1].repeat(1, 2, 1, 1) for i in range(spec.size(1))], dim=1)
+               spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
+          elif audio_type == 'stacks':
+               stride = int(length_sample // length)
+               if stride > 0:
+                    samples = torch.stack([samples[left_sample+(i*length):left_sample+((i+1)*length)] for i in range(stride)],dim=0)
+               else:
+                    if left_sample+length < len(samples):
+                         samples = samples[left_sample:left_sample+length]
+                    elif right_sample >= len(samples):
+                         samples = samples[-length:]
+                    else:
+                         samples = samples[right_sample - length:right_sample]
+                    samples = samples.unsqueeze(0)
+               spec = self.spectrogram(samples)
+               spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
+               stack_dim = spec.shape[1]
+               if audio_type == 'stacks':
+                    idx = np.round(np.linspace(0, stack_dim - 1, self.num_segment)).astype(int).tolist()
+                    spec = spec[:, idx, :, :]
+               else:
+                    spec = spec[:, (stack_dim-1)//2, :, :]
           else:
                samples = samples[left_sample:right_sample]
                spec = self.spectrogram(samples)

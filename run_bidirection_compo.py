@@ -30,6 +30,7 @@ import models.cast_square
 import models.cast_bisquare
 import models.cast_Bsquare
 import models.AIM_cls
+import models.audio_cast
 from models.prompt import text_prompt
 import pandas as pd
 # from models.paraphrase import paraphrase
@@ -219,9 +220,10 @@ def get_args():
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
     parser.add_argument('--audio_path', default=None, type=str, help='audio path')
     parser.add_argument('--collate', action='store_true', default=False)
-    parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack'],
+    parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack','stacks','single'],
                         type=str, help='audio_trim_type')
     parser.add_argument('--narration', action='store_true', default=False)
+    parser.add_argument('--spec_augment', action='store_true', default=False)
     
     
     

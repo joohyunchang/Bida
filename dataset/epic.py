@@ -103,6 +103,8 @@ class EpicVideoClsDataset(Dataset):
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
                     if os.path.exists(audio_trim_path):
                          spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
+                         if args.spec_augment:
+                              spec = self.spec_augment(spec)
                     else:
                          audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
                          audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')

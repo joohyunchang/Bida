@@ -424,6 +424,8 @@ def load_bidir_weights(model, args):
                     new_dict['blocks.'+ key[22:24] + '.clip_text_' + key[25:]] = checkpoint_clip[key]
             else:
                 new_dict['clip_text_' + key] = checkpoint_clip[key]
+        new_dict['audio_ln_post.weight'] = checkpoint_clip['ln_post.weight']
+        new_dict['audio_ln_post.bias'] = checkpoint_clip['ln_post.bias']
     else:
         checkpoint_clip = clip_checkpoint.state_dict()
         for key in checkpoint_clip:

@@ -449,6 +449,8 @@ class STCrossTransformer(nn.Module):
                  fusion_method=None,
                  audio_enabled=False,
                  spec_frames=1,
+                 attn_all_frame=True,
+                 CA=0,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -468,8 +470,8 @@ class STCrossTransformer(nn.Module):
 
         ###################################
         spec_frames = (spec_frames+1) //2
-        attn_all_frame=True
-        CA=0
+        attn_all_frame=attn_all_frame
+        CA=CA
         ###################################
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -640,12 +642,26 @@ class STCrossTransformer(nn.Module):
 def compo_single_audio_clip_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=True, **kwargs)
     return model
+
+@register_model
+def compo_single_audio_clip_CA9_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, CA=9, spec_frames=1, attn_all_frame=True, **kwargs)
+    return model
+
+# @register_model
+# def compo_stacks_audio_clip_vit_base_patch16_224(pretrained=False, **kwargs):
+#     model = STCrossTransformer(
+#         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+#         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, CA=0, spec_frames=16, attn_all_frame=True, **kwargs)
+#     return model
 
 @register_model
 def compo_stacks_audio_clip_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, spec_frames=16, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, CA=0, spec_frames=16, attn_all_frame=False, **kwargs)
     return model

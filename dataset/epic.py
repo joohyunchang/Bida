@@ -372,7 +372,7 @@ class EpicVideoClsDataset(Dataset):
           if audio_type == 'stack':
                spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1) if audio_type == 'stack' else spec.unsqueeze(0).repeat(3, 1, 1)
           elif audio_type == 'frame':
-               spec = self.spectrogram(spec).unsqueeze(0).repeat(3,1,1,1)
+               spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
           elif audio_type == 'all':
                spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
           elif audio_type == 'all8':

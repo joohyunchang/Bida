@@ -386,6 +386,8 @@ class EpicVideoClsDataset(Dataset):
                     spec = spec[:, idx, :, :]
                else:
                     spec = spec[:, (stack_dim-1)//2, :, :]
+          elif audio_type == 'onespec':
+               spec = spec.unsqueeze(0).repeat(3, 1, 1)
           else:
                pass
           return spec
@@ -401,7 +403,7 @@ class EpicVideoClsDataset(Dataset):
                right_sample = len(samples)
           length_sample = right_sample - left_sample
           length = int(round(1.119*sample_rate))
-          if audio_type in ['stack','single']:
+          if audio_type in ['stack']:
                stride = int(length_sample // length)
                if stride == 0:
                     if left_sample+length < len(samples):
@@ -451,7 +453,7 @@ class EpicVideoClsDataset(Dataset):
                spec = self._specgram(samples, resampling_rate=sample_rate)
                spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
                spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
-          elif audio_type == 'stacks':
+          elif audio_type in ['stacks','single']:
                stride = int(length_sample // length)
                if stride > 0:
                     samples = torch.stack([samples[left_sample+(i*length):left_sample+((i+1)*length)] for i in range(stride)],dim=0)
@@ -471,6 +473,10 @@ class EpicVideoClsDataset(Dataset):
                     spec = spec[:, idx, :, :]
                else:
                     spec = spec[:, (stack_dim-1)//2, :, :]
+          elif audio_type == 'onespec':
+               samples = samples[left_sample:right_sample]
+               spec = self._specgram(samples, resampling_rate=sample_rate)
+               spec = spec.unsqueeze(0).repeat(3, 1, 1)
           else:
                samples = samples[left_sample:right_sample]
                spec = self.spectrogram(samples)

@@ -86,7 +86,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
         batch_size = samples.shape[0]
-
+        target = targets
         
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
@@ -103,7 +103,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
 
         loss_value = loss.item()
         
-        top1_acc, top5_acc = accuracy(logits, targets, topk=(1, 5))
+        top1_acc, top5_acc = accuracy(logits, target, topk=(1, 5))
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))

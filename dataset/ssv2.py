@@ -9,7 +9,8 @@ from decord import VideoReader, cpu
 from torch.utils.data import Dataset
 import util_tools.video_transforms as video_transforms 
 import util_tools.volume_transforms as volume_transforms
-
+import torchaudio
+import random
 
 class SSVideoClsDataset(Dataset):
     """Load your own video classification dataset."""
@@ -17,9 +18,10 @@ class SSVideoClsDataset(Dataset):
     def __init__(self, anno_path, data_path, mode='train', clip_len=8,
                 crop_size=224, short_side_size=256, new_height=256,
                 new_width=340, keep_aspect_ratio=True, num_segment=1,
-                num_crop=1, test_num_segment=10, test_num_crop=3, args=None):
+                num_crop=1, test_num_segment=10, test_num_crop=3, args=None, audio_path=None):
         self.anno_path = anno_path
         self.data_path = data_path
+        self.audio_path = args.audio_path
         self.mode = mode
         self.clip_len = clip_len
         self.crop_size = crop_size
@@ -34,17 +36,23 @@ class SSVideoClsDataset(Dataset):
         self.args = args
         self.aug = False
         self.rand_erase = False
+        self.audio_type = args.audio_type
+        self.disable_video = False
         if self.mode in ['train']:
             self.aug = True
             if self.args.reprob > 0:
                 self.rand_erase = True
         if VideoReader is None:
             raise ImportError("Unable to import `decord` which is required to read videos.")
+        # if self.audio_path is not None:
+        #     self._spectrogram_init(resampling_rate=24000)
 
         import pandas as pd
-        cleaned = pd.read_csv(self.anno_path, header=None, delimiter=' ')
+        cleaned = pd.read_csv(self.anno_path, header=0, delimiter=',')
         self.dataset_samples = list(cleaned.values[:, 0])
         self.label_array = list(cleaned.values[:, 1])
+        self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 3]) for i in range(len(cleaned))} if args.narration else None
+        self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 3]) for i in range(len(cleaned))} if args.class_narration else self.narration_array
 
         if (mode == 'train'):
             pass
@@ -82,14 +90,22 @@ class SSVideoClsDataset(Dataset):
             args = self.args 
             scale_t = 1
 
-            sample = self.dataset_samples[index]
-            sample = self.data_path + '/' + str(sample) + ".mp4"
+            # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+            caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+            spec = {}
+            
+            sample = str(self.dataset_samples[index]) + '.mp4'
+            sample = os.path.join(self.data_path, sample)
+            if self.disable_video:
+                return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+            
             buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
             if len(buffer) == 0:
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during training".format(sample))
                     index = np.random.randint(self.__len__())
-                    sample = self.dataset_samples[index]
+                    sample = str(self.dataset_samples[index]) + '.mp4'
+                    sample = os.path.join(self.data_path, sample)
                     buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t)
 
             if args.num_sample > 1:
@@ -106,24 +122,36 @@ class SSVideoClsDataset(Dataset):
             else:
                 buffer = self._aug_frame(buffer, args)
             
-            return buffer, self.label_array[index], index, {}
+            return buffer, self.label_array[index], index, spec, caption
         
         elif self.mode == 'validation':
-            sample = self.dataset_samples[index]
-            sample = self.data_path + '/' + str(sample) + ".mp4"
+            # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+            caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+            spec = {}
+            
+            sample = str(self.dataset_samples[index]) + '.mp4'
+            sample = os.path.join(self.data_path, sample)
+            if self.disable_video:
+                return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+            
             buffer = self.loadvideo_decord(sample)
             if len(buffer) == 0:
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during validation".format(sample))
                     index = np.random.randint(self.__len__())
-                    sample = self.dataset_samples[index]
+                    sample = str(self.dataset_samples[index]) + '.mp4'
+                    sample = os.path.join(self.data_path, sample)
                     buffer = self.loadvideo_decord(sample)
             buffer = self.data_transform(buffer)
-            return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0]
+            return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
 
         elif self.mode == 'test':
-            sample = self.test_dataset[index]
-            sample = self.data_path + '/' + str(sample) + ".mp4"
+            # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+            caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+            spec = {}
+            
+            sample = str(self.test_dataset[index]) + '.mp4'
+            sample = os.path.join(self.data_path, sample)
             chunk_nb, split_nb = self.test_seg[index]
             buffer = self.loadvideo_decord(sample)
 
@@ -131,7 +159,8 @@ class SSVideoClsDataset(Dataset):
                 warnings.warn("video {}, temporal {}, spatial {} not found during testing".format(\
                     str(self.test_dataset[index]), chunk_nb, split_nb))
                 index = np.random.randint(self.__len__())
-                sample = self.test_dataset[index]
+                sample = str(self.test_dataset[index]) + '.mp4'
+                sample = os.path.join(self.data_path, sample)
                 chunk_nb, split_nb = self.test_seg[index]
                 buffer = self.loadvideo_decord(sample)
 
@@ -156,7 +185,7 @@ class SSVideoClsDataset(Dataset):
 
             buffer = self.data_transform(buffer)
             return buffer, self.test_label_array[index], sample.split("/")[-1].split(".")[0], \
-                   chunk_nb, split_nb
+                   chunk_nb, split_nb, spec, caption
         else:
             raise NameError('mode {} unkown'.format(self.mode))
 

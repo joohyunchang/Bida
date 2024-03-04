@@ -534,8 +534,9 @@ class STCrossTransformer(nn.Module):
             # self.head_noun_dropout = nn.Dropout(head_drop_rate)
             pass
         else:
-            self.noun_last_Adapter = Adapter(embed_dim, skip_connect=False)
-            self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
+            self.noun_last_Adapter = Adapter(embed_dim, skip_connect=True)
+            self.verb_last_Adapter = Adapter(embed_dim, skip_connect=True)
+            self.meta_N_Adapter = Adapter(text_dim, mlp_ratio=0.0625, skip_connect=False)
             # self.head = nn.Linear(embed_dim, text_dim) if text_dim > 0 else nn.Identity()
             # self.head_dropout = nn.Dropout(head_drop_rate)
             self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, proj_dim))
@@ -661,7 +662,7 @@ class STCrossTransformer(nn.Module):
             prompt_texttoken = torch.zeros(len(actionlist), 77).unsqueeze(0).repeat(B,1,1)
             
             for i, a in enumerate(actionlist):
-                embedding = torch.from_numpy(actiondict[a][0]).float().to(self.verb_embedding.weight.device)
+                embedding = torch.from_numpy(actiondict[a][0]).float().to(self.noun_embedding.weight.device)
                 token = torch.from_numpy(actiontoken[a][0])
                 text_embedding[:,i,0] = embedding[0]
                 ind = np.argmax(token, -1)
@@ -695,7 +696,7 @@ class STCrossTransformer(nn.Module):
             return text_embedding, prompt_texttoken
 
     
-    def forward(self, x, inp_nounlist, inp_verblist):        
+    def forward(self, x, inp_nounlist, inp_verblist=None):        
         if self.composition:
             s_x, t_x = self.forward_features(x)
             # s_x = self.head_noun_dropout(s_x)
@@ -738,13 +739,25 @@ class STCrossTransformer(nn.Module):
                 
             return s_x, t_x, nounFeature, verbFeature
         else:
-            text_embedding, prompt_texttoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
-            textFeature = self.encode_text(text_embedding, prompt_texttoken)
             s_x, t_x = self.forward_features(x)
             x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
             x = x @ self.clip_noun_proj
-            # x = self.head_dropout(x)
-            # x = self.head(x)
+            N_x = self.meta_N_Adapter(x)
+            
+            ov = ['noun', None][0]
+            if ov == 'noun':
+                text_embedding, prompt_texttoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, N_x)
+            else:
+                text_embedding, prompt_texttoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken)
+                
+            B = x.shape[0]
+            if text_embedding.dim() == 4:
+                text_embedding = rearrange(text_embedding, 'b c t d -> (b c) t d')
+                prompt_texttoken = rearrange(prompt_texttoken, 'b c t -> (b c) t')
+                textFeature = self.encode_text(text_embedding, prompt_texttoken)
+                textFeature = rearrange(textFeature, '(b c) d -> b c d', b=B)
+            else:
+                textFeature = self.encode_text(text_embedding, prompt_texttoken)
             return x, textFeature
 
 

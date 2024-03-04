@@ -9,6 +9,8 @@ from decord import VideoReader, cpu
 from torch.utils.data import Dataset
 import util_tools.video_transforms as video_transforms 
 import util_tools.volume_transforms as volume_transforms
+import torchaudio
+import random
 
 
 class DivingVideoClsDataset(Dataset):
@@ -42,9 +44,10 @@ class DivingVideoClsDataset(Dataset):
             raise ImportError("Unable to import `decord` which is required to read videos.")
 
         import pandas as pd
-        cleaned = pd.read_csv(self.anno_path, header=None, delimiter=' ')
+        cleaned = pd.read_csv(self.anno_path, header=0, delimiter=',')
         self.dataset_samples = list(cleaned.values[:, 0])
         self.label_array = list(cleaned.values[:, 1])
+        self.narration_array = None
 
         if (mode == 'train'):
             pass
@@ -81,14 +84,20 @@ class DivingVideoClsDataset(Dataset):
         if self.mode == 'train':
             args = self.args 
             scale_t = 1
+            
+            # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+            caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+            spec = {}
 
-            sample = self.dataset_samples[index]
+            sample = self.dataset_samples[index] + '.mp4'
+            sample = os.path.join(self.data_path, sample)
             buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
             if len(buffer) == 0:
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during training".format(sample))
                     index = np.random.randint(self.__len__())
-                    sample = self.dataset_samples[index]
+                    sample = self.dataset_samples[index] + '.mp4'
+                    sample = os.path.join(self.data_path, sample)
                     buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t)
 
             if args.num_sample > 1:
@@ -101,25 +110,35 @@ class DivingVideoClsDataset(Dataset):
                     frame_list.append(new_frames)
                     label_list.append(label)
                     index_list.append(index)
-                return frame_list, label_list, index_list, {}
+                return frame_list, label_list, index_list, spec, caption
             else:
                 buffer = self._aug_frame(buffer, args)
             
-            return buffer, self.label_array[index], index, {}
+            return buffer, self.label_array[index], index, spec, caption
         
         elif self.mode == 'validation':
-            sample = self.dataset_samples[index]
+            # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+            caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+            spec = {}
+            
+            sample = self.dataset_samples[index] + '.mp4'
+            sample = os.path.join(self.data_path, sample)
             buffer = self.loadvideo_decord(sample)
             if len(buffer) == 0:
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during validation".format(sample))
                     index = np.random.randint(self.__len__())
-                    sample = self.dataset_samples[index]
+                    sample = self.dataset_samples[index] + '.mp4'
+                    sample = os.path.join(self.data_path, sample)
                     buffer = self.loadvideo_decord(sample)
             buffer = self.data_transform(buffer)
-            return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0]
+            return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
 
         elif self.mode == 'test':
+            # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+            caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+            spec = {}
+            
             sample = self.test_dataset[index]
             chunk_nb, split_nb = self.test_seg[index]
             buffer = self.loadvideo_decord(sample)
@@ -128,7 +147,8 @@ class DivingVideoClsDataset(Dataset):
                 warnings.warn("video {}, temporal {}, spatial {} not found during testing".format(\
                     str(self.test_dataset[index]), chunk_nb, split_nb))
                 index = np.random.randint(self.__len__())
-                sample = self.test_dataset[index]
+                sample = self.test_dataset[index] + '.mp4'
+                sample = os.path.join(self.data_path, sample)
                 chunk_nb, split_nb = self.test_seg[index]
                 buffer = self.loadvideo_decord(sample)
 
@@ -154,7 +174,7 @@ class DivingVideoClsDataset(Dataset):
 
             buffer = self.data_transform(buffer)
             return buffer, self.test_label_array[index], sample.split("/")[-1].split(".")[0], \
-                   chunk_nb, split_nb
+                   chunk_nb, split_nb, spec, caption
         else:
             raise NameError('mode {} unkown'.format(self.mode))
 

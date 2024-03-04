@@ -20,7 +20,7 @@ from util_tools.optim_factory import create_optimizer, get_parameter_groups, Lay
 
 from dataset.datasets import build_dataset
 from util_tools.utils import NativeScalerWithGradNormCount as NativeScaler, load_bidir_weights, unfreeze_block
-from util_tools.utils import multiple_samples_collate, notice_message, laod_eval_weights
+from util_tools.utils import multiple_samples_collate, notice_message, laod_eval_weights, audio_collate_fn, test_audio_collate_fn
 import util_tools.utils as utils
 import models.bidir_modeling_after_crossattn
 import models.bidir_modeling_crossattn
@@ -31,7 +31,7 @@ import models.both_cast
 import models.ov_cast
 import models.AIM
 from models.prompt import text_prompt
-
+import pandas as pd
 
 
 def get_args():
@@ -223,6 +223,11 @@ def get_args():
     parser.add_argument('--both', action='store_true', default=False)
     parser.add_argument('--one_head', action='store_true', default=False)
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
+    parser.add_argument('--audio_path', default=None, type=str, help='audio path')
+    parser.add_argument('--narration', action='store_true', default=False)
+    parser.add_argument('--class_narration', action='store_true', default=False)
+    parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack','stacks','single','onespec'],
+                        type=str, help='audio_trim_type')
     
     
     
@@ -294,10 +299,14 @@ def main(args, ds_init):
     else:
         log_writer = None
 
-    if args.num_sample > 1:
-        collate_func = partial(multiple_samples_collate, fold=False)
+    # if args.num_sample > 1:
+    #     collate_func = partial(multiple_samples_collate, fold=False)
+    # else:
+    #     collate_func = None
+    if args.narration is not None or args.class_narration is not None:
+        train_collate, val_collate, test_collate = audio_collate_fn, audio_collate_fn, test_audio_collate_fn
     else:
-        collate_func = None
+        train_collate, val_collate, test_collate = None, None, None
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, sampler=sampler_train,
@@ -305,7 +314,7 @@ def main(args, ds_init):
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=True,
-        collate_fn=collate_func,
+        collate_fn=train_collate,
     )
 
     if dataset_val is not None:
@@ -314,7 +323,8 @@ def main(args, ds_init):
             batch_size=int(1.5 * args.batch_size),
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
-            drop_last=False
+            drop_last=False,
+            collate_fn=val_collate
         )
     else:
         data_loader_val = None
@@ -325,7 +335,8 @@ def main(args, ds_init):
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
-            drop_last=False
+            drop_last=False,
+            collate_fn=test_collate
         )
     else:
         data_loader_test = None
@@ -477,9 +488,9 @@ def main(args, ds_init):
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
     print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
-    if mixup_fn is not None:  # 이부분도 수정했음
+    if mixup_fn is not None:
         # smoothing is handled with mixup label transform
-        criterion = torch.nn.CrossEntropyLoss()  # SoftTargetCrossEntropy()
+        criterion = SoftTargetCrossEntropy()
     elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
@@ -498,10 +509,10 @@ def main(args, ds_init):
         else:
             from engine_for_prompt import train_one_epoch, validation_one_epoch, final_test, merge
     else:
-        if args.one_head:
-            from engine_for_prompt_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
-        else:
+        if args.kd:
             from engine_for_prompt_NV import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
+        else:
+            from engine_for_prompt_finetuning import train_one_epoch, validation_one_epoch, final_test, merge, speedup_one_epoch
     
     if args.eval or args.eval_result:
         if args.throughput:
@@ -512,7 +523,7 @@ def main(args, ds_init):
         else:
             preds_file = os.path.join(args.output_dir, str(global_rank) + '.txt')
             if not args.eval_result:
-                test_stats = final_test(args, data_loader_test, model, device, preds_file,class_list=class_list)
+                test_stats = final_test(args, data_loader_test, model, device, preds_file, class_list=class_list)
             torch.distributed.barrier()
             if global_rank == 0:
                 print("Start merging results...")
@@ -529,7 +540,6 @@ def main(args, ds_init):
                                 'confidences_verb': np.array(conf_verb).mean()}
                     
                     # ======== save prediction result ======== #
-                    import pandas as pd
                     video_ids = [''.join(x).replace(' ','') for x in video_ids]
                     pred_noun = [class_list[0][i] for i in pred_noun]
                     pred_verb = [class_list[3][i] for i in pred_verb]
@@ -562,6 +572,7 @@ def main(args, ds_init):
                                 row[6].fill = red_fill
                         wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
                 elif args.one_head:
+                    print("Start merging results...")
                     final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
                     print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
                     log_stats = {'Final top-1': final_top1, 
@@ -572,8 +583,8 @@ def main(args, ds_init):
                     video_ids = [''.join(x).replace(' ','') for x in video_ids]
                     pred = [class_list[0][i] for i in pred]
                     label = [class_list[0][int(i)] for i in label]
-                    pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'confidence':conf})
-                    pred_df['confidence'] = (pred_df['confidence']).round(4)
+                    pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'conf':conf})
+                    pred_df['conf'] = (pred_df['conf']).round(4)
                     pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
                     
                     if args.xlsx:
@@ -587,7 +598,7 @@ def main(args, ds_init):
                         # 데이터프레임을 엑셀 시트로 변환
                         for r in dataframe_to_rows(pred_df, index=False, header=True):
                             ws.append(r) 
-                            
+
                         red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
                         for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
                             if row[1].value != row[2].value:
@@ -596,6 +607,7 @@ def main(args, ds_init):
                         wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
                     
                 else:
+                    print("Start merging results...")
                     final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
                     pred, label = torch.tensor(pred).to(args.device), torch.tensor(label).to(args.device)
                     pred_noun , pred_verb, label_noun, label_verb = pred % 300, pred // 300, label % 300, label // 300
@@ -617,9 +629,9 @@ def main(args, ds_init):
                     pred_verb = [class_list[3][i] for i in pred_verb]
                     label_noun = [class_list[0][int(i)] for i in label_noun]
                     label_verb = [class_list[3][int(i)] for i in label_verb]
-                    pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'confidence':conf})
+                    pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf':conf})
                     pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
-                    pred_df['confidence'] = (pred_df['confidence']).round(4)
+                    pred_df['conf'] = (pred_df['conf']).round(4)
                     pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
                     
                     if args.xlsx:
@@ -647,8 +659,7 @@ def main(args, ds_init):
                     with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                         f.write(json.dumps(log_stats) + "\n")
             exit(0)
-        
-
+    
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
@@ -741,7 +752,6 @@ def main(args, ds_init):
                     f.write(json.dumps(log_stats) + "\n")
     
             # ======== save prediction result ======== #
-            import pandas as pd
             video_ids = [''.join(x).replace(' ','') for x in video_ids]
             pred_noun = [class_list[0][i] for i in pred_noun]
             pred_verb = [class_list[3][i] for i in pred_verb]
@@ -774,38 +784,41 @@ def main(args, ds_init):
                         row[6].fill = red_fill
                 wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
         elif args.one_head:
-                    final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
-                    print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
-                    log_stats = {'Final top-1': final_top1, 
-                                'Final Top-5': final_top5,
-                                'confidences': np.array(conf).mean()}
-                    
-                    # ======== save prediction result ======== #
-                    video_ids = [''.join(x).replace(' ','') for x in video_ids]
-                    pred = [class_list[0][i] for i in pred]
-                    label = [class_list[0][int(i)] for i in label]
-                    pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'confidence':conf})
-                    pred_df['confidence'] = (pred_df['confidence']).round(4)
-                    pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
-                    
-                    if args.xlsx:
-                        from openpyxl import Workbook
-                        from openpyxl.styles import PatternFill
-                        from openpyxl.utils.dataframe import dataframe_to_rows
+            final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
+            print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
+            log_stats = {'Final top-1': final_top1, 
+                        'Final Top-5': final_top5,
+                        'confidences': np.array(conf).mean()}
+            if args.output_dir and utils.is_main_process():
+                with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
+                    f.write(json.dumps(log_stats) + "\n")
+            
+            # ======== save prediction result ======== #
+            video_ids = [''.join(x).replace(' ','') for x in video_ids]
+            pred = [class_list[0][i] for i in pred]
+            label = [class_list[0][int(i)] for i in label]
+            pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'conf':conf})
+            pred_df['conf'] = (pred_df['conf']).round(4)
+            pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+            
+            if args.xlsx:
+                from openpyxl import Workbook
+                from openpyxl.styles import PatternFill
+                from openpyxl.utils.dataframe import dataframe_to_rows
 
-                        wb = Workbook()
-                        ws = wb.active
+                wb = Workbook()
+                ws = wb.active
+                
+                # 데이터프레임을 엑셀 시트로 변환
+                for r in dataframe_to_rows(pred_df, index=False, header=True):
+                    ws.append(r) 
 
-                        # 데이터프레임을 엑셀 시트로 변환
-                        for r in dataframe_to_rows(pred_df, index=False, header=True):
-                            ws.append(r) 
-                            
-                        red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
-                        for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
-                            if row[1].value != row[2].value:
-                                row[1].fill = red_fill
-                                row[3].fill = red_fill
-                        wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
+                    if row[1].value != row[2].value:
+                        row[1].fill = red_fill
+                        row[3].fill = red_fill
+                wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
         else:
             final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
             pred, label = torch.tensor(pred).to(args.device), torch.tensor(label).to(args.device)
@@ -831,9 +844,9 @@ def main(args, ds_init):
             pred_verb = [class_list[3][i] for i in pred_verb]
             label_noun = [class_list[0][int(i)] for i in label_noun]
             label_verb = [class_list[3][int(i)] for i in label_verb]
-            pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'confidence':conf})
+            pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf':conf})
             pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
-            pred_df['confidence'] = (pred_df['confidence']).round(4)
+            pred_df['conf'] = (pred_df['conf']).round(4)
             pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
             
             if args.xlsx:

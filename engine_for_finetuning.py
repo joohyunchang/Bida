@@ -8,10 +8,19 @@ from util_tools.mixup import Mixup
 from timm.utils import accuracy, ModelEma
 import util_tools.utils as utils
 from scipy.special import softmax
+from einops import rearrange
+import random
+import pandas as pd
 
-
-def train_class_batch(model, samples, target, criterion):
-    outputs = model(samples)
+def train_class_batch(model, samples, target, criterion, captions=None, spec=None):
+    if captions is not None:
+        outputs = model(samples, caption=captions)
+    elif spec is not None:
+        outputs = model(samples, spec=spec)
+    else:
+        outputs = model(samples)
+        
+        
     loss = criterion(outputs, target)
     return loss, outputs
 
@@ -26,20 +35,23 @@ def train_one_epoch(args,model: torch.nn.Module, criterion: torch.nn.Module,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None, log_writer=None,
                     start_steps=None, lr_schedule_values=None, wd_schedule_values=None,
-                    num_training_steps_per_epoch=None, update_freq=None):
+                    num_training_steps_per_epoch=None, update_freq=None, class_list=None, nar_list=None):
     model.train(True)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 10
+    print_freq = 20
+    
+    # prompt setting
+    # actionlist, actiondict, actiontoken = class_list
 
     if loss_scaler is None:
         model.zero_grad()
         model.micro_steps = 0
     else:
         optimizer.zero_grad()
-    for data_iter_step, (samples, targets, _, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, targets, ids, spec, captions) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
             continue
@@ -51,17 +63,25 @@ def train_one_epoch(args,model: torch.nn.Module, criterion: torch.nn.Module,
                     param_group["lr"] = lr_schedule_values[it] * param_group["lr_scale"]
                 if wd_schedule_values is not None and param_group["weight_decay"] > 0:
                     param_group["weight_decay"] = wd_schedule_values[it]
-
+        
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
-        
+        if args.audio_path is not None:
+            if args.collate:
+                spec = torch.stack(spec, dim=0).to(device, non_blocking=True).half()
+            else:
+                spec = spec.to(device, non_blocking=True).half()
+        else:
+            spec = None
+        batch_size = samples.shape[0]
+        target = targets
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
 
         if loss_scaler is None:
             samples = samples.half()            
             loss, output = train_class_batch(
-                model, samples, targets, criterion)
+                model, samples, targets, criterion, captions=captions, spec=spec)
         else:
             with torch.cuda.amp.autocast():
                 samples = samples.half() 
@@ -69,6 +89,7 @@ def train_one_epoch(args,model: torch.nn.Module, criterion: torch.nn.Module,
                     model, samples, targets, criterion)
 
         loss_value = loss.item()
+        acc1, acc5 = accuracy(output, target, topk=(1, 5))
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -121,6 +142,10 @@ def train_one_epoch(args,model: torch.nn.Module, criterion: torch.nn.Module,
                 weight_decay_value = group["weight_decay"]
         metric_logger.update(weight_decay=weight_decay_value)
         metric_logger.update(grad_norm=grad_norm)
+        metric_logger.update(acc1=acc1.item())
+        metric_logger.update(acc5=acc5.item())
+        metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
+        metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
 
         if log_writer is not None:
             log_writer.update(loss=loss_value, head="loss")
@@ -145,7 +170,7 @@ def validation_one_epoch(args,data_loader, model, device):
 
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Val:'
-
+    
     # switch to evaluation mode
     model.eval()
 
@@ -154,16 +179,27 @@ def validation_one_epoch(args,data_loader, model, device):
         target = batch[1]
         videos = videos.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
+        if args.audio_path is not None:
+            # spec = [spe.to(device, non_blocking=True) for spe in batch[3]]
+            if args.collate:
+                spec = torch.stack(batch[3], dim=0).to(device, non_blocking=True)
+            else:
+                spec = batch[3].to(device, non_blocking=True)
+        else:
+            spec = None
+        captions = batch[4]
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(videos)
+            output = model(videos, caption=captions, spec=spec)
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
 
         batch_size = videos.shape[0]
         metric_logger.update(loss=loss.item())
+        metric_logger.update(acc1=acc1.item())
+        metric_logger.update(acc5=acc5.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
     # gather the stats from all processes
@@ -243,10 +279,19 @@ def final_test(args,data_loader, model, device, file):
         split_nb = batch[4]
         videos = videos.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
+        if args.audio_path is not None:
+            # spec = [spe.to(device, non_blocking=True) for spe in batch[5]]
+            if args.collate:
+                spec = torch.stack(batch[5], dim=0).to(device, non_blocking=True)
+            else:
+                spec = batch[5].to(device, non_blocking=True)
+        else:
+            spec = None
+        captions = batch[6]
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(videos)
+            output = model(videos, caption=captions, spec=spec)
             loss = criterion(output, target)
 
         for i in range(output.size(0)):
@@ -261,6 +306,8 @@ def final_test(args,data_loader, model, device, file):
 
         batch_size = videos.shape[0]
         metric_logger.update(loss=loss.item())
+        metric_logger.update(acc1=acc1.item())
+        metric_logger.update(acc5=acc5.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
 
@@ -278,7 +325,7 @@ def final_test(args,data_loader, model, device, file):
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
-def merge(eval_path, num_tasks):
+def merge(eval_path, num_tasks, return_result = False):
     dict_feats = {}
     dict_label = {}
     dict_pos = {}
@@ -315,16 +362,22 @@ def merge(eval_path, num_tasks):
     ans = p.map(compute_video, input_lst)
     top1 = [x[1] for x in ans]
     top5 = [x[2] for x in ans]
-    pred = [x[0] for x in ans]
-    label = [x[3] for x in ans]
     final_top1 ,final_top5 = np.mean(top1), np.mean(top5)
+    if return_result:
+        pred = [x[0] for x in ans]
+        label = [x[3] for x in ans]
+        video_ids = [x[4] for x in ans]
+        conf = [x[5] for x in ans]
+        return final_top1*100 ,final_top5*100, pred, label, video_ids, conf
     return final_top1*100 ,final_top5*100
 
 def compute_video(lst):
     i, video_id, data, label = lst
+    video_ids = [x for x in video_id]
     feat = [x for x in data]
     feat = np.mean(feat, axis=0)
     pred = np.argmax(feat)
+    conf = np.max(feat)
     top1 = (int(pred) == int(label)) * 1.0
     top5 = (int(label) in np.argsort(-feat)[:5]) * 1.0
-    return [pred, top1, top5, int(label)]
+    return [pred, top1, top5, label, video_ids, conf]

@@ -73,7 +73,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         model.micro_steps = 0
     else:
         optimizer.zero_grad()
-    for data_iter_step, (samples, targets, _, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, targets, _, _, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
             continue
@@ -91,8 +91,8 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         batch_size = samples.shape[0]
 
         
-        # if mixup_fn is not None:
-        #     samples, targets = mixup_fn(samples, targets)
+        if mixup_fn is not None:
+            samples, targets = mixup_fn(samples, targets)
 
         if loss_scaler is None:
             samples = samples.half()            

@@ -70,10 +70,6 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    # metric_logger.add_meter('acc1_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    # metric_logger.add_meter('acc1_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    # metric_logger.add_meter('acc5_noun', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    # metric_logger.add_meter('acc5_verb', utils.SmoothedValue(window_size=1, fmt='{value:.3f}')) 
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
     
@@ -103,9 +99,10 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         action_target = (targets[:,1] * 1000) + targets[:,0]
         batch_size = samples.shape[0]
 
-        target_noun, target_verb = targets[:,0], targets[:,1]
-        # if mixup_fn is not None: # 잠시 mixup을 끈다.
-        #     samples, target_noun, target_verb = mixup_fn(samples, targets)
+        if mixup_fn is not None:
+            samples, target_noun, target_verb = mixup_fn(samples, targets)
+        else:
+            target_noun, target_verb = targets[:,0], targets[:,1]
         
         if loss_scaler is None: # deepspeed 라면 이부분이 실행된다. 근데 else문은 업데이트 안되있어서 deepspeed 없으면 오류 발생
             samples = samples.half()
@@ -119,19 +116,6 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         loss_value = loss.item()   
 
         acc1_action, acc5_action = action_accuracy(outputs_noun, noun_logits, verb_logits, topk=(1,5))
-        # if (step * update_freq) % 60 == 0 and data_iter_step % update_freq == 0:
-        # noun_sim = noun_logits.softmax(dim=-1)
-        # verb_sim = verb_logits.softmax(dim=-1)
-        # _, indices_noun = noun_sim.topk(5, dim=-1)
-        # _, indices_verb = verb_sim.topk(5, dim=-1)
-        # top1_noun = indices_noun[:,0] == targets[:,0]
-        # top1_verb = indices_verb[:,0] == targets[:,1]
-        # top5_noun = (indices_noun == repeat(targets[:,0], 'b -> b k', k=5)).sum(-1)
-        # top5_verb = (indices_verb == repeat(targets[:,1], 'b -> b k', k=5)).sum(-1)
-        # top1_noun_acc = top1_noun.sum() / len(top1_noun) * 100
-        # top1_verb_acc = top1_verb.sum() / len(top1_verb) * 100
-        # top5_noun_acc = top5_noun.sum() / len(top5_noun) * 100
-        # top5_verb_acc = top5_verb.sum() / len(top5_verb) * 100
         top1_noun_acc, top5_noun_acc = accuracy(noun_logits, targets[:,0], topk=(1, 5))
         top1_verb_acc, top5_verb_acc = accuracy(verb_logits, targets[:,1], topk=(1, 5))
 

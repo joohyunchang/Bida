@@ -224,6 +224,7 @@ def get_args():
     parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack','stacks','single','onespec'],
                         type=str, help='audio_trim_type')
     parser.add_argument('--narration', action='store_true', default=False)
+    parser.add_argument('--class_narration', action='store_true', default=False)
     parser.add_argument('--spec_augment', action='store_true', default=False)
     
     
@@ -300,12 +301,8 @@ def main(args, ds_init):
     #     collate_func = partial(multiple_samples_collate, fold=False)
     # else:
     #     collate_func = None
-    if args.audio_path is not None:
-        # args.collate == True
-        if args.collate:
-            train_collate, val_collate, test_collate = audio_collate_fn, audio_collate_fn, test_audio_collate_fn
-        else:
-            train_collate, val_collate, test_collate = None, None, None
+    if args.audio_path is not None or args.narration is not None or args.class_narration is not None:
+        train_collate, val_collate, test_collate = audio_collate_fn, audio_collate_fn, test_audio_collate_fn
     else:
         train_collate, val_collate, test_collate = None, None, None
 
@@ -547,28 +544,42 @@ def main(args, ds_init):
                         wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
                 else:
                     print("Start merging results...")
-                    final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
+                    final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
                     print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
                     log_stats = {'Final top-1': final_top1, 
-                                'Final Top-5': final_top5}
+                                'Final Top-5': final_top5,
+                                'confidences': np.array(conf).mean()}
+                    
+                    # ======== save prediction result ======== #
+                    video_ids = [''.join(x).replace(' ','') for x in video_ids]
+                    pred = [class_list[0][i] for i in pred]
+                    label = [class_list[0][int(i)] for i in label]
+                    pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'conf':conf})
+                    pred_df['conf'] = (pred_df['conf']).round(4)
+                    pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+                    
+                    if args.xlsx:
+                        from openpyxl import Workbook
+                        from openpyxl.styles import PatternFill
+                        from openpyxl.utils.dataframe import dataframe_to_rows
+
+                        wb = Workbook()
+                        ws = wb.active
+
+                        # 데이터프레임을 엑셀 시트로 변환
+                        for r in dataframe_to_rows(pred_df, index=False, header=True):
+                            ws.append(r) 
+
+                        red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                        for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
+                            if row[1].value != row[2].value:
+                                row[1].fill = red_fill
+                                row[3].fill = red_fill
+                        wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
                 if args.output_dir and utils.is_main_process():
                     with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                         f.write(json.dumps(log_stats) + "\n")
             exit(0)
-        
-
-    if args.narration:
-        # ======== Narration Preprocessing ======== #
-        nar_path = os.path.join(args.anno_path, "epic100_train_gpt2_xl.csv")
-        cleaned = pd.read_csv(nar_path, header=0, delimiter=',')
-        nar_list = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))}
-        # nar_list = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 14]] for i in range(len(cleaned))}
-        # paraph = paraphrase(args.anno_path, device)
-        # nar_list = {cleaned.iloc[i, 0]: [paraph.generate(cleaned.iloc[i, 6])] for i in range(len(cleaned))}
-        # nar_list = [eval(nar) for nar in cleaned.values[:, 9]]
-        # ========================================= #
-    else:
-        nar_list = None
     
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -584,7 +595,7 @@ def main(args, ds_init):
             device, epoch, loss_scaler, args.clip_grad, model_ema, mixup_fn,
             log_writer=log_writer, start_steps=epoch * num_training_steps_per_epoch,
             lr_schedule_values=lr_schedule_values, wd_schedule_values=wd_schedule_values,
-            num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq, class_list=class_list, nar_list=nar_list
+            num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq, class_list=class_list
         )
         torch.cuda.empty_cache()
         if args.output_dir and args.save_ckpt:
@@ -695,13 +706,42 @@ def main(args, ds_init):
                         row[6].fill = red_fill
                 wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
         else:
-            final_top1 ,final_top5 = merge(args.output_dir, num_tasks)
+            final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
             print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
-            log_stats = {'Final top-1': final_top1,
-                        'Final Top-5': final_top5}
+            log_stats = {'Final top-1': final_top1, 
+                        'Final Top-5': final_top5,
+                        'confidences': np.array(conf).mean()}
             if args.output_dir and utils.is_main_process():
                 with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                     f.write(json.dumps(log_stats) + "\n")
+            
+            # ======== save prediction result ======== #
+            video_ids = [''.join(x).replace(' ','') for x in video_ids]
+            pred = [class_list[0][i] for i in pred]
+            label = [class_list[0][int(i)] for i in label]
+            pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'conf':conf})
+            pred_df['conf'] = (pred_df['conf']).round(4)
+            pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+            
+            if args.xlsx:
+                from openpyxl import Workbook
+                from openpyxl.styles import PatternFill
+                from openpyxl.utils.dataframe import dataframe_to_rows
+
+                wb = Workbook()
+                ws = wb.active
+                
+                # 데이터프레임을 엑셀 시트로 변환
+                for r in dataframe_to_rows(pred_df, index=False, header=True):
+                    ws.append(r) 
+
+                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
+                    if row[1].value != row[2].value:
+                        row[1].fill = red_fill
+                        row[3].fill = red_fill
+                wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+    
     
 
     total_time = time.time() - start_time

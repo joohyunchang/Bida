@@ -59,20 +59,18 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    # metric_logger.add_meter('acc1', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
-    # metric_logger.add_meter('acc5', utils.SmoothedValue(window_size=1, fmt='{value:.3f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
-    # textlist, textdict, texttoken = class_list
-    nounlist, noundict, nountoken, verblist, verbdict, verbtoken, textlist, textdict, texttoken = class_list
-    textdict = None
+    textlist, textdict, texttoken = class_list
+    if not args.kd:
+        textdict = None
     
     if loss_scaler is None:
         model.zero_grad()
         model.micro_steps = 0
     else:
         optimizer.zero_grad()
-    for data_iter_step, (samples, targets, _, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, targets, _, _, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
             continue
@@ -90,11 +88,11 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         batch_size = samples.shape[0]
 
         
-        # if mixup_fn is not None:
-        #     samples, targets = mixup_fn(samples, targets)
+        if mixup_fn is not None:
+            samples, targets = mixup_fn(samples, targets)
 
         if loss_scaler is None:
-            samples = samples.half()            
+            samples = samples.half()
             loss, output, logits = train_class_batch(
                 model, samples, targets, criterion, textlist, args.device, textFeature = textdict)
         else:
@@ -191,7 +189,7 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
     header = 'Val:'
     
     # prompt setting
-    nounlist, noundict, nountoken, verblist, verbdict, verbtoken, textlist, textdict, texttoken = class_list
+    textlist, textdict, texttoken = class_list
     featnorm = 1
 
     # switch to evaluation mode
@@ -201,7 +199,6 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
         target = batch[1]
         videos = videos.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
-        textFeature = textdict
         
         # compute output
         with torch.cuda.amp.autocast():
@@ -217,7 +214,7 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
             else:
                 logits = outputs_video @ textFeature.t() if textFeature.dim() == 2 else torch.bmm(textFeature, outputs_video.unsqueeze(-1)).squeeze(-1)
         
-            loss = criterion(logits, target])
+            loss = criterion(logits, target)
 
         acc1, acc5 = accuracy(logits, target, topk=(1, 5))
 
@@ -294,7 +291,7 @@ def final_test(args,data_loader, model, device, file, class_list):
     header = 'Test:'
     
     # prompt setting
-    nounlist, noundict, nountoken, verblist, verbdict, verbtoken, textlist, textdict, texttoken = class_list
+    textlist, textdict, texttoken = class_list
     featnorm = 1
 
     # switch to evaluation mode
@@ -309,7 +306,6 @@ def final_test(args,data_loader, model, device, file, class_list):
         split_nb = batch[4]
         videos = videos.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
-        textFeature = textdict
 
         # compute output
         with torch.cuda.amp.autocast():
@@ -394,10 +390,10 @@ def merge(eval_path, num_tasks, return_result = False):
     ans = p.map(compute_video, input_lst)
     top1 = [x[1] for x in ans]
     top5 = [x[2] for x in ans]
-    pred = [x[0] for x in ans]
-    label = [x[3] for x in ans]
     final_top1 ,final_top5 = np.mean(top1), np.mean(top5)
     if return_result:
+        pred = [x[0] for x in ans]
+        label = [x[3] for x in ans]
         video_ids = [x[4] for x in ans]
         confidence = [x[5] for x in ans]
         return final_top1*100 ,final_top5*100, pred, label, video_ids, confidence
@@ -412,4 +408,4 @@ def compute_video(lst):
     confidence = np.max(feat)
     top1 = (int(pred) == int(label)) * 1.0
     top5 = (int(label) in np.argsort(-feat)[:5]) * 1.0
-    return [pred, top1, top5, int(label), video_ids, confidence]
+    return [pred, top1, top5, label, video_ids, confidence]

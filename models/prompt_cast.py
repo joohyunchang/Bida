@@ -525,8 +525,8 @@ class STCrossTransformer(nn.Module):
             # self.head_noun_dropout = nn.Dropout(head_drop_rate)
             pass
         else:
-            self.noun_last_Adapter = Adapter(embed_dim, skip_connect=False)
-            self.verb_last_Adapter = Adapter(embed_dim, skip_connect=False)
+            self.noun_last_Adapter = Adapter(embed_dim, skip_connect=True)
+            self.verb_last_Adapter = Adapter(embed_dim, skip_connect=True)
             # self.head = nn.Linear(embed_dim, text_dim) if text_dim > 0 else nn.Identity()
             # self.head_dropout = nn.Dropout(head_drop_rate)
             self.clip_noun_proj = nn.Parameter(scale * torch.randn(embed_dim, proj_dim))
@@ -663,7 +663,7 @@ class STCrossTransformer(nn.Module):
             prompt_texttoken[i][self.prefix + ind + self.postfix] = token[ind]
         return text_embedding, prompt_texttoken
     
-    def forward(self, x, inp_nounlist, inp_verblist):
+    def forward(self, x, inp_nounlist, inp_verblist=None):
         if self.composition:
             noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, embedding= 'noun')
             verb_embedding, prompt_verbtoken = self.replace_text_embedding(inp_verblist, self.verbdict, self.verbtoken, embedding= 'verb')

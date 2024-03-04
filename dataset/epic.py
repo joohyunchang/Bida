@@ -14,9 +14,9 @@ import random
 
 class EpicVideoClsDataset(Dataset):
      def __init__(self, anno_path, data_path, mode='train', clip_len=8,
-                crop_size=224, short_side_size=256, new_height=256,
-                new_width=340, keep_aspect_ratio=True, num_segment=1,
-                num_crop=1, test_num_segment=10, test_num_crop=3, args=None, audio_path=None):
+               crop_size=224, short_side_size=256, new_height=256,
+               new_width=340, keep_aspect_ratio=True, num_segment=1,
+               num_crop=1, test_num_segment=10, test_num_crop=3, args=None, audio_path=None):
           self.anno_path = anno_path
           self.data_path = data_path
           self.audio_path = args.audio_path
@@ -59,7 +59,8 @@ class EpicVideoClsDataset(Dataset):
           self.audio_samples = {cleaned.iloc[i, 0]: cleaned.iloc[i, 12:14] for i in range(len(cleaned))}
           # self.audio_samples = None
           # lavila_narrator = list(cleaned.values[:, 9])
-          # self.lavila_narrator = [eval(nar) for nar in cleaned.values[:, 9]]
+          self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))} if args.narration else None
+          self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 14]) for i in range(len(cleaned))} if args.class_narration else self.narration_array
           del(cleaned)
           self.label_array = np.stack((noun_label_array, verb_label_array, action_label_array), axis=1) # label [noun, verb] sequence
           
@@ -98,6 +99,9 @@ class EpicVideoClsDataset(Dataset):
           if self.mode == 'train':
                args = self.args
                scale_t = 1
+               # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+               caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+               
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
@@ -123,7 +127,7 @@ class EpicVideoClsDataset(Dataset):
                sample = self.dataset_samples[index] + '.mp4'
                sample = os.path.join(self.data_path, sample)
                if self.disable_video:
-                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec
+                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
                buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
                
                if len(buffer) == 0:
@@ -146,9 +150,12 @@ class EpicVideoClsDataset(Dataset):
                     return frame_list, label_list, index_list, {}
                else:
                     buffer = self._aug_frame(buffer, args)
-               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec
+               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
           
           elif self.mode == 'validation':
+               # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+               caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+               
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
@@ -166,7 +173,7 @@ class EpicVideoClsDataset(Dataset):
                sample = self.dataset_samples[index] + '.mp4'
                sample = os.path.join(self.data_path, sample)
                if self.disable_video:
-                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec
+                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
                buffer = self.loadvideo_decord(sample)
                
                if len(buffer) == 0:
@@ -176,9 +183,12 @@ class EpicVideoClsDataset(Dataset):
                          sample = self.dataset_samples[index]
                          buffer = self.loadvideo_decord(sample)
                buffer = self.data_transform(buffer)
-               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec
+               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
           
           elif self.mode == 'test':
+               # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+               caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+               
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.test_dataset[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
@@ -228,7 +238,7 @@ class EpicVideoClsDataset(Dataset):
 
                buffer = self.data_transform(buffer)
                return buffer, self.test_label_array[index], sample.split("/")[-1].split(".")[0], \
-                    chunk_nb, split_nb, spec
+                    chunk_nb, split_nb, spec, caption
           else:
                raise NameError('mode {} unkown'.format(self.mode))
                

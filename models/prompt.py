@@ -87,6 +87,65 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         
         return [nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken]
     
+    elif dataset == 'SSV2':
+        action_anno_path = os.path.join(data_path, 'labels.json')
+        with open(action_anno_path, 'r') as f:
+            action_cleaned = json.load(f)
+            actionlist = list(action_cleaned.keys())
+        actiontoken = np.array([convert_to_token(a) for a in actionlist])
+    
+        # query the vector from dictionary
+        with torch.no_grad():
+            actionembed = clipmodel.encode_text_light(torch.tensor(actiontoken).to(device))
+                
+        actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(len(actionlist)))
+        
+        if useEncoder:
+            actionFeatures = []
+            with torch.no_grad():
+                clipmodel.half()
+                batch_size = 1000
+                for i in range(0, actionembed.size(0), batch_size):
+                    end_idx = min(i+batch_size, actionembed.size(0))
+                    actionFeature = clipmodel.encode_text(actionembed.squeeze(1)[i:end_idx], torch.from_numpy(actiontoken.squeeze(1)[i:end_idx]))
+                    actionFeatures.append(actionFeature)
+                actiondict = torch.cat(actionFeatures, dim=0)
+        
+        actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(len(actionlist)))
+        del clipmodel
+        torch.cuda.empty_cache()
+        
+        return [actionlist, actiondict, actiontoken]
+    
+    elif dataset == 'Kinetics-400':
+        action_anno_path = os.path.join(data_path, 'kinetics400_labels.csv')
+        action_cleaned = pd.read_csv(action_anno_path, header=0, delimiter=',')
+        actionlist = list(action_cleaned.values[:, 1])
+        actiontoken = np.array([convert_to_token(a) for a in actionlist])
+    
+        # query the vector from dictionary
+        with torch.no_grad():
+            actionembed = clipmodel.encode_text_light(torch.tensor(actiontoken).to(device))
+                
+        actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(len(actionlist)))
+        
+        if useEncoder:
+            actionFeatures = []
+            with torch.no_grad():
+                clipmodel.half()
+                batch_size = 1000
+                for i in range(0, actionembed.size(0), batch_size):
+                    end_idx = min(i+batch_size, actionembed.size(0))
+                    actionFeature = clipmodel.encode_text(actionembed.squeeze(1)[i:end_idx], torch.from_numpy(actiontoken.squeeze(1)[i:end_idx]))
+                    actionFeatures.append(actionFeature)
+                actiondict = torch.cat(actionFeatures, dim=0)
+        
+        actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(len(actionlist)))
+        del clipmodel
+        torch.cuda.empty_cache()
+        
+        return [actionlist, actiondict, actiontoken]
+    
     elif dataset == 'diving-48':
         anno_path = os.path.join(data_path, 'class.csv')
         cleaned = pd.read_csv(anno_path, header=None, delimiter=',')
@@ -101,9 +160,19 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         with torch.no_grad():
             actionembed = clipmodel.encode_text_light(torch.tensor(actiontoken).to(device))
 
-        actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(300))
-        actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(300))
-
+        actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(len(actionlist)))
+        
+        if useEncoder:
+            actionFeatures = []
+            with torch.no_grad():
+                clipmodel.half()
+                batch_size = 1000
+                for i in range(0, actionembed.size(0), batch_size):
+                    end_idx = min(i+batch_size, actionembed.size(0))
+                    actionFeature = clipmodel.encode_text(actionembed.squeeze(1)[i:end_idx], torch.from_numpy(actiontoken.squeeze(1)[i:end_idx]))
+                    actionFeatures.append(actionFeature)
+                actiondict = torch.cat(actionFeatures, dim=0)
+        actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(len(actionlist)))
         del clipmodel
         torch.cuda.empty_cache()
         

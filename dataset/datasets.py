@@ -62,17 +62,17 @@ def build_dataset(is_train, test_mode, args):
         anno_path = None
         if is_train is True:
             mode = 'train'
-            anno_path = os.path.join(args.anno_path, 'kinetics400_train.csv')
+            anno_path = os.path.join(args.anno_path, 'kinetics400_val_gpt_xl.csv')
         elif test_mode is True:
             mode = 'test'
-            anno_path = os.path.join(args.anno_path, 'kinetics400_val.csv') 
+            anno_path = os.path.join(args.anno_path, 'kinetics400_val_gpt_xl.csv') 
         else:  
             mode = 'validation'
-            anno_path = os.path.join(args.anno_path, 'kinetics400_val.csv') 
+            anno_path = os.path.join(args.anno_path, 'kinetics400_test_gpt_xl.csv') 
 
         dataset = VideoClsDataset(
             anno_path=anno_path,
-            data_path='/',
+            data_path=args.data_path,
             mode=mode,
             clip_len=args.num_frames,
             frame_sample_rate=args.sampling_rate,
@@ -92,17 +92,17 @@ def build_dataset(is_train, test_mode, args):
         anno_path = None
         if is_train is True:
             mode = 'train'
-            anno_path = os.path.join(args.anno_path, 'train.csv')
+            anno_path = os.path.join(args.anno_path, 'train_gpt.csv')
         elif test_mode is True:
             mode = 'test'
-            anno_path = os.path.join(args.anno_path, 'val.csv')
+            anno_path = os.path.join(args.anno_path, 'val_gpt.csv')
         else:
             mode = 'validation'
-            anno_path = os.path.join(args.anno_path, 'val.csv')
+            anno_path = os.path.join(args.anno_path, 'val_gpt.csv')
     
         dataset = DivingVideoClsDataset(
             anno_path=anno_path,
-            data_path='/',
+            data_path=args.data_path,
             mode=mode,
             clip_len=1,
             num_segment=args.num_frames,
@@ -122,17 +122,17 @@ def build_dataset(is_train, test_mode, args):
         anno_path = None
         if is_train is True:
             mode = 'train'
-            anno_path = os.path.join(args.anno_path, 'train_mp4.csv')
+            anno_path = os.path.join(args.anno_path, 'train_gpt2.csv')
         elif test_mode is True:
             mode = 'test'
-            anno_path = os.path.join(args.anno_path, 'val_mp4.csv')
+            anno_path = os.path.join(args.anno_path, 'val_gpt2.csv')
         else:
             mode = 'validation'
-            anno_path = os.path.join(args.anno_path, 'val_mp4.csv')
+            anno_path = os.path.join(args.anno_path, 'val_gpt2.csv')
     
         dataset = SSVideoClsDataset(
             anno_path=anno_path,
-            data_path='/',
+            data_path=args.data_path,
             mode=mode,
             clip_len=1,
             num_segment=args.num_frames,

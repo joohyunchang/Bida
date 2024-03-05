@@ -62,13 +62,13 @@ def build_dataset(is_train, test_mode, args):
         anno_path = None
         if is_train is True:
             mode = 'train'
-            anno_path = os.path.join(args.anno_path, 'kinetics400_val_gpt_xl.csv')
+            anno_path = os.path.join(args.anno_path, 'kinetics400_train_gpt_xl.csv')
         elif test_mode is True:
             mode = 'test'
-            anno_path = os.path.join(args.anno_path, 'kinetics400_val_gpt_xl.csv') 
+            anno_path = os.path.join(args.anno_path, 'kinetics400_test_gpt_xl.csv') 
         else:  
             mode = 'validation'
-            anno_path = os.path.join(args.anno_path, 'kinetics400_test_gpt_xl.csv') 
+            anno_path = os.path.join(args.anno_path, 'kinetics400_val_gpt_xl.csv') 
 
         dataset = VideoClsDataset(
             anno_path=anno_path,

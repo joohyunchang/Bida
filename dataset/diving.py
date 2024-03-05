@@ -139,7 +139,7 @@ class DivingVideoClsDataset(Dataset):
             caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
             spec = {}
             
-            sample = self.test_dataset[index]
+            sample = self.test_dataset[index] + '.mp4'
             chunk_nb, split_nb = self.test_seg[index]
             buffer = self.loadvideo_decord(sample)
 

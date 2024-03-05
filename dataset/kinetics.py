@@ -97,7 +97,7 @@ class VideoClsDataset(Dataset):
             spec = {}
 
             sample = self.dataset_samples[index] + '.mp4'
-            sample = os.path.join(self.data_path, 'val', sample)
+            sample = os.path.join(self.data_path, 'train', sample)
             if self.disable_video:
                 return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
             
@@ -107,7 +107,7 @@ class VideoClsDataset(Dataset):
                     warnings.warn("video {} not correctly loaded during training".format(sample))
                     index = np.random.randint(self.__len__())
                     sample = self.dataset_samples[index] + '.mp4'
-                    sample = os.path.join(self.data_path, 'val', sample)
+                    sample = os.path.join(self.data_path, 'train', sample)
                     buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t)
 
             if args.num_sample > 1:
@@ -141,7 +141,8 @@ class VideoClsDataset(Dataset):
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during validation".format(sample))
                     index = np.random.randint(self.__len__())
-                    sample = self.dataset_samples[index]
+                    sample = self.dataset_samples[index] + '.mp4'
+                    sample = os.path.join(self.data_path, 'val', sample)
                     buffer = self.loadvideo_decord(sample)
             buffer = self.data_transform(buffer)
             return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0]
@@ -159,7 +160,8 @@ class VideoClsDataset(Dataset):
                 warnings.warn("video {}, temporal {}, spatial {} not found during testing".format(\
                     str(self.test_dataset[index]), chunk_nb, split_nb))
                 index = np.random.randint(self.__len__())
-                sample = self.test_dataset[index]
+                sample = self.test_dataset[index] + '.mp4'
+                sample = os.path.join(self.data_path, 'test', sample)
                 chunk_nb, split_nb = self.test_seg[index]
                 buffer = self.loadvideo_decord(sample)
 

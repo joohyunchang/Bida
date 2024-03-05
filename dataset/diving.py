@@ -140,6 +140,7 @@ class DivingVideoClsDataset(Dataset):
             spec = {}
             
             sample = self.test_dataset[index] + '.mp4'
+            sample = os.path.join(self.data_path, sample)
             chunk_nb, split_nb = self.test_seg[index]
             buffer = self.loadvideo_decord(sample)
 

@@ -801,7 +801,6 @@ def main(args, ds_init):
                     f.write(json.dumps(log_stats) + "\n")
                     
             # ======== save prediction result ======== #
-            import pandas as pd
             video_ids = [''.join(x).replace(' ','') for x in video_ids]
             pred_noun = [class_list[0][i] for i in pred_noun]
             pred_verb = [class_list[3][i] for i in pred_verb]

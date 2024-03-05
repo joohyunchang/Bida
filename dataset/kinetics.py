@@ -145,7 +145,7 @@ class VideoClsDataset(Dataset):
                     sample = os.path.join(self.data_path, 'val', sample)
                     buffer = self.loadvideo_decord(sample)
             buffer = self.data_transform(buffer)
-            return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0]
+            return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
 
         elif self.mode == 'test':
             # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None

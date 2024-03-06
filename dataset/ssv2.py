@@ -146,8 +146,8 @@ class SSVideoClsDataset(Dataset):
             return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
 
         elif self.mode == 'test':
-            # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
-            caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
+            # caption = random.choice(self.narration_array[self.test_dataset[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
+            caption = random.choice(self.narration_array[self.test_dataset[index]]) if self.narration_array is not None else None
             spec = {}
             
             sample = str(self.test_dataset[index]) + '.mp4'

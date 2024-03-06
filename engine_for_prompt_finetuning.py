@@ -205,7 +205,9 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
             if idx == 0:
                 outputs_video, textFeature = model(videos, textlist)
             else:
-                outputs_video, _ = model(videos, textlist)
+                outputs_video, _ = model(videos, textlist[:1])
+            if textFeature.dim() == 3 and outputs_video.shape[0] != textFeature.shape[0]:
+                _, textFeature = model(videos, textlist)
                 
             if featnorm:
                 outputs_video = outputs_video / outputs_video.norm(dim=-1, keepdim=True)
@@ -312,7 +314,10 @@ def final_test(args,data_loader, model, device, file, class_list):
             if idx == 0:
                 outputs_video, textFeature = model(videos, textlist)
             else:
-                outputs_video, _ = model(videos, textlist)
+                outputs_video, _ = model(videos, textlist[:1])
+            if textFeature.dim() == 3 and outputs_video.shape[0] != textFeature.shape[0]:
+                _, textFeature = model(videos, textlist)
+                
             if featnorm:
                 outputs_video = outputs_video / outputs_video.norm(dim=-1, keepdim=True)
                 textFeature = textFeature / textFeature.norm(dim=-1, keepdim=True)

@@ -9,6 +9,7 @@ from decord import VideoReader, cpu
 from torch.utils.data import Dataset
 import util_tools.video_transforms as video_transforms 
 import util_tools.volume_transforms as volume_transforms
+from util_tools.audio_transforms import Spectrogram
 import torchaudio
 import random
 
@@ -34,7 +35,6 @@ class EpicVideoClsDataset(Dataset):
           self.args = args
           self.aug = False
           self.rand_erase = False
-          self.audio_type = args.audio_type
           self.disable_video = False
           if self.mode in ['train']:
                self.aug = True
@@ -43,7 +43,13 @@ class EpicVideoClsDataset(Dataset):
           if VideoReader is None:
                raise ImportError("Unable to import `decord` which is required to read videos.")
           if self.audio_path is not None:
-               self._spectrogram_init(resampling_rate=24000)
+               self.audio_type = args.audio_type
+               # self._spectrogram_init(resampling_rate=24000)
+               if args.audio_height != 224 or args.audio_width != 224:
+                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=1024)
+               else:
+                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width)
+               
           
           import pandas as pd
           import pickle
@@ -105,19 +111,19 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
-                    if os.path.exists(audio_trim_path):
-                         spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
+                    if os.path.exists(audio_trim_path) and not args.realtime_audio:
+                         spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                          if args.spec_augment:
-                              spec = self.spec_augment(spec)
+                              spec = self.spectrogram.spec_augment(spec)
                     else:
                          audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
                          audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          try:
-                              spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, mode=self.mode)
+                              spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, mode=self.mode)
                               if args.spec_augment:
-                                   spec = self.spec_augment(spec)
+                                   spec = self.spectrogram.spec_augment(spec)
                          except:
                               print("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
                               spec = torch.random((3, 16, 224, 224))
@@ -159,7 +165,7 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
-                    if os.path.exists(audio_trim_path):
+                    if os.path.exists(audio_trim_path) and not args.realtime_audio:
                          spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
                          audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
@@ -192,7 +198,7 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.test_dataset[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
-                    if os.path.exists(audio_trim_path):
+                    if os.path.exists(audio_trim_path) and not args.realtime_audio:
                          spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
                          audio_id = '_'.join(self.test_dataset[index].split('_')[:-1])

@@ -226,6 +226,9 @@ def get_args():
     parser.add_argument('--narration', action='store_true', default=False)
     parser.add_argument('--class_narration', action='store_true', default=False)
     parser.add_argument('--spec_augment', action='store_true', default=False)
+    parser.add_argument('--realtime_audio', action='store_true', default=False)
+    parser.add_argument('--audio_height', default=224, type=int, help='audio_spec_shape')
+    parser.add_argument('--audio_width', default=224, type=int, help='audio_spec_shape')
     
     
     
@@ -245,6 +248,11 @@ def get_args():
 
     return parser.parse_args(), ds_init
 
+def parse_tuple(string):
+    try:
+        return tuple(map(int, string.split(',')))
+    except:
+        raise argparse.ArgumentTypeError("Tuple must be x,y")
 
 def main(args, ds_init):
     utils.init_distributed_mode(args)

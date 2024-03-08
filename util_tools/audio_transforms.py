@@ -101,7 +101,7 @@ class Spectrogram:
                 spec = spec[:, idx, :, :]
             else:
                 spec = spec[:, (stack_dim-1)//2, :, :]
-        elif audio_type == 'onespec':
+        elif audio_type in ['onespec', 'single1024']:
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         else:
             pass
@@ -169,7 +169,7 @@ class Spectrogram:
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
-        elif audio_type in ['stacks','single']:
+        elif audio_type in ['stacks','single','single1024']:
             stride = int(length_sample // length)
             if stride > 0:
                 samples = torch.stack([samples[left_sample+(i*length):left_sample+((i+1)*length)] for i in range(stride)],dim=0)

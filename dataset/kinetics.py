@@ -120,7 +120,7 @@ class VideoClsDataset(Dataset):
                     frame_list.append(new_frames)
                     label_list.append(label)
                     index_list.append(index)
-                return frame_list, label_list, index_list, {}
+                return frame_list, label_list, index_list, spec, caption
             else:
                 buffer = self._aug_frame(buffer, args)
             
@@ -184,7 +184,7 @@ class VideoClsDataset(Dataset):
 
             buffer = self.data_transform(buffer)
             return buffer, self.test_label_array[index], sample.split("/")[-1].split(".")[0], \
-                   chunk_nb, split_nb
+                   chunk_nb, split_nb, spec, caption
         else:
             raise NameError('mode {} unkown'.format(self.mode))
 

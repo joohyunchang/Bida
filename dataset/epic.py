@@ -44,6 +44,7 @@ class EpicVideoClsDataset(Dataset):
                raise ImportError("Unable to import `decord` which is required to read videos.")
           if self.audio_path is not None:
                self.audio_type = args.audio_type
+               self.realtime_audio = args.realtime_audio
                # self._spectrogram_init(resampling_rate=24000)
                if args.audio_height != 224 or args.audio_width != 224:
                     self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=1024)
@@ -111,7 +112,7 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
-                    if os.path.exists(audio_trim_path) and not args.realtime_audio:
+                    if os.path.exists(audio_trim_path) and not self.realtime_audio:
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                          if args.spec_augment:
                               spec = self.spectrogram.spec_augment(spec)
@@ -165,14 +166,14 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
-                    if os.path.exists(audio_trim_path) and not args.realtime_audio:
-                         spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
+                    if os.path.exists(audio_trim_path) and not self.realtime_audio:
+                         spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
                          audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
                          audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
-                         spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
+                         spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
                else:
                     spec = {}
                
@@ -198,14 +199,14 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.test_dataset[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
-                    if os.path.exists(audio_trim_path) and not args.realtime_audio:
-                         spec = self.loadaudiofromfile(audio_trim_path, self.audio_type)
+                    if os.path.exists(audio_trim_path) and not self.realtime_audio:
+                         spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
                          audio_id = '_'.join(self.test_dataset[index].split('_')[:-1])
                          audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                          start_frame = self.audio_samples[self.test_dataset[index]]['start_frame']
                          end_frame = self.audio_samples[self.test_dataset[index]]['stop_frame']
-                         spec = self.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
+                         spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
                else:
                     spec = {}
                

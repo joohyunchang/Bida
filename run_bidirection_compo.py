@@ -764,11 +764,11 @@ def main(args, ds_init):
             attach_dict = {
             'color' : '#ff0000',
             'author_name' : 'Job Finish',
-            'title' : job_name,
+            'title' : args.vmae_model,
             'text' : cluster,
             }
             attach_list=[attach_dict] 
-            contents=f"Job_name:{job_name}\nTraining time is {job_time}\nTop 1 Accuracy is {final_top1_action},{final_top1_noun},{final_top1_verb}" if args.composition else f"Job_name:{job_name}\nTraining time is {job_time}\nTop 1 Accuracy is {final_top1}"
+            contents=f"Job_name:{job_name}\nTraining time is {job_time}, Batch:{args.batch_size}, Parameter:{n_parameters}\nTop 1 Accuracy is {final_top1_action:05.2f}, {final_top1_noun:05.2f}, {final_top1_verb:05.2f}" if args.composition else f"Job_name:{job_name}\nTraining time is {job_time}, Batch:{args.batch_size}, Parameter:{n_parameters}\nTop 1 Accuracy is {final_top1:05.2f}"
             notice_message(Token, "#notice-job", contents, attach_list)
     
 

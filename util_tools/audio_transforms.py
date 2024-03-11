@@ -47,7 +47,8 @@ class Spectrogram:
         if spec.shape[-1] != self.length:
             expand = self.length - spec.shape[-1]
             if spec.dim() == 3:
-                spec = spec[:,:,:self.length] if spec.shape[-1] > self.length else torch.concat([spec,spec[:,:,-expand:]],dim=-1)
+                # spec = spec[:,:,:self.length] if spec.shape[-1] > self.length else torch.concat([spec,spec[:,:,-expand:]],dim=-1)
+                spec = spec[:,:,:self.length] if spec.shape[-1] > self.length else  torch.nn.functional.pad(spec, pad=(0, expand, 0, 0))
             else:
                 spec = spec[:,:self.length] if spec.shape[-1] > self.length else torch.concat([spec,spec[:,-expand:]],dim=-1)
         return spec
@@ -108,13 +109,19 @@ class Spectrogram:
         return spec
         
         
-    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test'):
+    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test', data_set='EPIC'):
         samples, sample_rate = torchaudio.load(sample)
         samples = samples.squeeze(0)
-        left_sec = start_frame / 60
-        right_sec = stop_frame / 60
-        left_sample = int(round(left_sec * sample_rate))
-        right_sample = int(round(right_sec * sample_rate))
+        if data_set == 'Kinetics-400':
+            left_sec = 0
+            right_sec = len(samples) / 60
+            left_sample = 0
+            right_sample = len(samples)
+        else:
+            left_sec = start_frame / 60
+            right_sec = stop_frame / 60
+            left_sample = int(round(left_sec * sample_rate))
+            right_sample = int(round(right_sec * sample_rate))
         if right_sample > len(samples):
             right_sample = len(samples)
         length_sample = right_sample - left_sample
@@ -131,7 +138,7 @@ class Spectrogram:
             else:
                 samples = samples[left_sample:right_sample:stride]
                 samples = samples[:length]
-            spec = self.spectrogram(samples)
+            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1) if audio_type == 'stack' else spec.unsqueeze(0).repeat(3, 1, 1)
         elif audio_type == 'frame':
             average_duration = (stop_frame - start_frame) // self.num_segment
@@ -155,7 +162,7 @@ class Spectrogram:
                 else:
                         spec.append(samples[left_sample:right_sample])
             spec = torch.stack(spec, dim=0)
-            spec = self.spectrogram(spec).unsqueeze(0).repeat(3,1,1,1)
+            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec).unsqueeze(0).repeat(3,1,1,1)
         elif audio_type == 'all':
             if right_sample > len(samples):
                 right_sample = len(samples)
@@ -181,7 +188,7 @@ class Spectrogram:
                 else:
                         samples = samples[right_sample - length:right_sample]
                 samples = samples.unsqueeze(0)
-            spec = self.spectrogram(samples)
+            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             stack_dim = spec.shape[1]
             if audio_type == 'stacks':
@@ -195,7 +202,7 @@ class Spectrogram:
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         else:
             samples = samples[left_sample:right_sample]
-            spec = self.spectrogram(samples)
+            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
             # spec = spec.unsqueeze(0).unsqueeze(0).expand(3, 16, -1, -1)
         return spec

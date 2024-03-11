@@ -622,7 +622,7 @@ def main(args, ds_init):
                     if args.output_dir and args.save_ckpt:
                         utils.save_model(
                             args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                            loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
+                            loss_scaler=loss_scaler, epoch="best", model_ema=model_ema, real_epoch=epoch)
 
                 print(f'Max accuracy: {max_accuracy:.2f}%')
                 if log_writer is not None:
@@ -639,7 +639,7 @@ def main(args, ds_init):
                     if args.output_dir and args.save_ckpt:
                         utils.save_model(
                             args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                            loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
+                            loss_scaler=loss_scaler, epoch="best", model_ema=model_ema, real_epoch=epoch)
 
                 print(f'Max accuracy: {max_accuracy:.2f}%')
                 if log_writer is not None:
@@ -661,6 +661,13 @@ def main(args, ds_init):
             with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
     preds_file = os.path.join(args.output_dir, str(global_rank) + '.txt')
+    try:
+        _, client_states = model.load_checkpoint(args.output_dir, tag='checkpoint-best')
+        print('Best checkpoint: ', client_states['epoch'])
+        pass
+    except:
+        pass
+
     test_stats = final_test(args, data_loader_test, model, device, preds_file)
     torch.distributed.barrier()
     if global_rank == 0:

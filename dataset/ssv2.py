@@ -52,7 +52,7 @@ class SSVideoClsDataset(Dataset):
         self.dataset_samples = list(cleaned.values[:, 0])
         self.label_array = list(cleaned.values[:, 1])
         self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 5]) for i in range(len(cleaned))} if args.narration else None
-        self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 3]) for i in range(len(cleaned))} if args.class_narration else self.narration_array
+        self.narration_array = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 2]]  for i in range(len(cleaned))} if args.class_narration else self.narration_array
 
         if (mode == 'train'):
             pass

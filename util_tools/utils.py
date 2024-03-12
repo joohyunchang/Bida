@@ -797,9 +797,14 @@ def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, mode
                 if t.isdigit():
                     latest_ckpt = max(int(t), latest_ckpt)
             if latest_ckpt >= 0:
-                args.resume = os.path.join(output_dir, 'checkpoint-%d' % latest_ckpt)
-                print("Auto resume checkpoint: %d" % latest_ckpt)
-                _, client_states = model.load_checkpoint(args.output_dir, tag='checkpoint-%d' % latest_ckpt)
+                args.resume = os.path.join(output_dir, 'checkpoint-best')
+                _, client_states = model.load_checkpoint(args.output_dir, tag='checkpoint-best')
+                if client_states['epoch'] == 'best' or int(client_states['epoch']) < latest_ckpt:
+                    args.resume = os.path.join(output_dir, 'checkpoint-%d' % latest_ckpt)
+                    _, client_states = model.load_checkpoint(args.output_dir, tag='checkpoint-%d' % latest_ckpt)
+                    print("Auto resume checkpoint: %d" % latest_ckpt)
+                else:
+                    print("Auto resume checkpoint: %d from best ckpt" % int(client_states['epoch']))
                 args.start_epoch = client_states['epoch'] + 1
                 if model_ema is not None:
                     if args.model_ema:

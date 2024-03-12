@@ -700,6 +700,16 @@ def prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=None, *
     return model
 
 @register_model
+def prompt_cast_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    textlist, textdict, texttoken = class_list
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, 
+        nounlist = textlist, noundict=textdict, nountoken=texttoken,
+        prefix = 16, postfix = 16, split_prompt = args.split_prompt, down_ratio=4, **kwargs)
+    return model
+
+@register_model
 def compo_prompt_cast_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken = class_list
     model = STCrossTransformer(

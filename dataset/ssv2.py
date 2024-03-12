@@ -51,8 +51,8 @@ class SSVideoClsDataset(Dataset):
         cleaned = pd.read_csv(self.anno_path, header=0, delimiter=',')
         self.dataset_samples = list(cleaned.values[:, 0])
         self.label_array = list(cleaned.values[:, 1])
-        self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 5]) for i in range(len(cleaned))} if args.narration else None
-        self.narration_array = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 2]]  for i in range(len(cleaned))} if args.class_narration else self.narration_array
+        self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 5]) for i in range(len(cleaned))} if (args.narration or args.class_narration) else None
+        self.narration_array = {cleaned.iloc[i, 0]: [cleaned.iloc[i, 2]]  for i in range(len(cleaned))} if (args.class_narration and self.mode == 'train') else self.narration_array
 
         if (mode == 'train'):
             pass

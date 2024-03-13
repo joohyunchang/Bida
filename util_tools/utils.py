@@ -213,7 +213,7 @@ def _load_checkpoint_for_ema(model_ema, checkpoint):
 
 def setup_for_distributed(is_master):
     """
-    This function disables printing when not in master process
+    This function disables printing when not in master process, except for error messages
     """
     import builtins as __builtin__
     builtin_print = __builtin__.print

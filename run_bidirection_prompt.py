@@ -649,7 +649,7 @@ def main(args, ds_init):
                             ws.append(r) 
 
                         red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
-                        for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
+                        for row in ws.iter_rows(min_row=2, max_col=4, max_row=len(pred_df) + 1):
                             if row[1].value != row[2].value:
                                 row[1].fill = red_fill
                                 row[3].fill = red_fill
@@ -663,6 +663,7 @@ def main(args, ds_init):
     start_time = time.time()
     max_accuracy = 0.0
     torch.cuda.empty_cache()
+    epoch = args.start_epoch
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -730,151 +731,158 @@ def main(args, ds_init):
                 log_writer.flush()
             with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
-    preds_file = os.path.join(args.output_dir, str(global_rank) + '.txt')
-    try:
-        _, client_states = model.load_checkpoint(args.output_dir, tag='checkpoint-best')
-        print('Best checkpoint: ', client_states['epoch'])
-        pass
-    except:
-        pass
+    current_epoch = epoch
+    for idx in range(2):
+        if idx == 1:
+            try:
+                _, client_states = model.load_checkpoint(args.output_dir, tag='checkpoint-best')
+                current_epoch = client_states['epoch']
+                if current_epoch == args.epochs - 1:
+                    break
+                print('Best checkpoint: ', current_epoch)
+            except:
+                break
     
-    test_stats = final_test(args, data_loader_test, model, device, preds_file, class_list=class_list)
-    torch.distributed.barrier()
-    if global_rank == 0:
-        print("Start merging results...")
-        if args.composition:
-            final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb, pred_noun, pred_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb = merge(args.output_dir, num_tasks, return_result=True)
-            print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1 Action: {final_top1_action:.2f}%, Top-5 Action: {final_top5_action:.2f}%")
-            log_stats = {'Final top-1 Action': final_top1_action,
-                        'Final Top-5 Action': final_top5_action,
-                        'Final Top-1 Noun': final_top1_noun,
-                        'Final Top-1 Verb': final_top1_verb,
-                        'Final Top-5 Noun': final_top5_noun,
-                        'Final Top-5 Verb': final_top5_verb,
-                        'confidences_noun': np.array(conf_noun).mean(),
-                        'confidences_verb': np.array(conf_verb).mean()}
-            if args.output_dir and utils.is_main_process():
-                with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
-                    f.write(json.dumps(log_stats) + "\n")
-    
-            # ======== save prediction result ======== #
-            video_ids = [''.join(x).replace(' ','') for x in video_ids]
-            pred_noun = [class_list[0][i] for i in pred_noun]
-            pred_verb = [class_list[3][i] for i in pred_verb]
-            label_noun = [class_list[0][int(i)] for i in label_noun]
-            label_verb = [class_list[3][int(i)] for i in label_verb]
-            pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf_verb':conf_verb, 'conf_noun':conf_noun})
-            pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
-            pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']).round(4), (pred_df['conf_noun']).round(4)
-            pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
-            
-            if args.xlsx:
-                from openpyxl import Workbook
-                from openpyxl.styles import PatternFill
-                from openpyxl.utils.dataframe import dataframe_to_rows
-
-                wb = Workbook()
-                ws = wb.active
-
-                # 데이터프레임을 엑셀 시트로 변환
-                for r in dataframe_to_rows(pred_df, index=False, header=True):
-                    ws.append(r) 
-                    
-                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
-                for row in ws.iter_rows(min_row=2, max_col=7, max_row=len(pred_df) + 1):
-                    if row[1].value != row[3].value:
-                        row[1].fill = red_fill
-                        row[5].fill = red_fill
-                    if row[2].value != row[4].value:
-                        row[2].fill = red_fill
-                        row[6].fill = red_fill
-                wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
-        elif args.kd:
-            final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
-            pred, label = torch.tensor(pred).to(args.device), torch.tensor(label).to(args.device)
-            pred_noun , pred_verb, label_noun, label_verb = pred % 300, pred // 300, label % 300, label // 300
-            top1_noun = pred_noun == label_noun
-            top1_verb = pred_verb == label_verb
-            final_top1_noun = top1_noun.sum() / len(top1_noun) * 100
-            final_top1_verb = top1_verb.sum() / len(top1_verb) * 100
-            print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
-            log_stats = {'Final top-1': final_top1,
-                        'Final Top-5': final_top5,
-                        'Final Top-1 Noun': final_top1_noun,
-                        'Final Top-1 Verb': final_top1_verb,
-                        'confidences': np.array(conf).mean()}
-            if args.output_dir and utils.is_main_process():
-                with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
-                    f.write(json.dumps(log_stats) + "\n")
-                    
-            # ======== save prediction result ======== #
-            video_ids = [''.join(x).replace(' ','') for x in video_ids]
-            pred_noun = [class_list[0][i] for i in pred_noun]
-            pred_verb = [class_list[3][i] for i in pred_verb]
-            label_noun = [class_list[0][int(i)] for i in label_noun]
-            label_verb = [class_list[3][int(i)] for i in label_verb]
-            pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf':conf})
-            pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
-            pred_df['conf'] = (pred_df['conf']).round(4)
-            pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
-            
-            if args.xlsx:
-                from openpyxl import Workbook
-                from openpyxl.styles import PatternFill
-                from openpyxl.utils.dataframe import dataframe_to_rows
-
-                wb = Workbook()
-                ws = wb.active
-
-                # 데이터프레임을 엑셀 시트로 변환
-                for r in dataframe_to_rows(pred_df, index=False, header=True):
-                    ws.append(r) 
-                    
-                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
-                for row in ws.iter_rows(min_row=2, max_col=6, max_row=len(pred_df) + 1):
-                    if row[1].value != row[3].value:
-                        row[1].fill = red_fill
-                        row[5].fill = red_fill
-                    if row[2].value != row[4].value:
-                        row[2].fill = red_fill
-                        row[5].fill = red_fill
-                wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
-        else:
-            final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
-            print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
-            log_stats = {'Final top-1': final_top1, 
-                        'Final Top-5': final_top5,
-                        'confidences': np.array(conf).mean()}
-            if args.output_dir and utils.is_main_process():
-                with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
-                    f.write(json.dumps(log_stats) + "\n")
-            
-            # ======== save prediction result ======== #
-            video_ids = [''.join(x).replace(' ','') for x in video_ids]
-            pred = [class_list[0][i] for i in pred]
-            label = [class_list[0][int(i)] for i in label]
-            pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'conf':conf})
-            pred_df['conf'] = (pred_df['conf']).round(4)
-            pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
-            
-            if args.xlsx:
-                from openpyxl import Workbook
-                from openpyxl.styles import PatternFill
-                from openpyxl.utils.dataframe import dataframe_to_rows
-
-                wb = Workbook()
-                ws = wb.active
+        preds_file = os.path.join(args.output_dir, str(global_rank) + '.txt')
+        test_stats = final_test(args, data_loader_test, model, device, preds_file, class_list=class_list)
+        torch.distributed.barrier()
+        if global_rank == 0:
+            print("Start merging results...")
+            if args.composition:
+                final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb, pred_noun, pred_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb = merge(args.output_dir, num_tasks, return_result=True)
+                print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1 Action: {final_top1_action:.2f}%, Top-5 Action: {final_top5_action:.2f}%")
+                log_stats = {'Epoch': current_epoch,
+                            'Final top-1 Action': final_top1_action,
+                            'Final Top-5 Action': final_top5_action,
+                            'Final Top-1 Noun': final_top1_noun,
+                            'Final Top-1 Verb': final_top1_verb,
+                            'Final Top-5 Noun': final_top5_noun,
+                            'Final Top-5 Verb': final_top5_verb,
+                            'confidences_noun': np.array(conf_noun).mean(),
+                            'confidences_verb': np.array(conf_verb).mean()}
+                if args.output_dir and utils.is_main_process():
+                    with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
+                        f.write(json.dumps(log_stats) + "\n")
+        
+                # ======== save prediction result ======== #
+                video_ids = [''.join(x).replace(' ','') for x in video_ids]
+                pred_noun = [class_list[0][i] for i in pred_noun]
+                pred_verb = [class_list[3][i] for i in pred_verb]
+                label_noun = [class_list[0][int(i)] for i in label_noun]
+                label_verb = [class_list[3][int(i)] for i in label_verb]
+                pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf_verb':conf_verb, 'conf_noun':conf_noun})
+                pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
+                pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']).round(4), (pred_df['conf_noun']).round(4)
+                pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
                 
-                # 데이터프레임을 엑셀 시트로 변환
-                for r in dataframe_to_rows(pred_df, index=False, header=True):
-                    ws.append(r) 
+                if args.xlsx:
+                    from openpyxl import Workbook
+                    from openpyxl.styles import PatternFill
+                    from openpyxl.utils.dataframe import dataframe_to_rows
 
-                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
-                for row in ws.iter_rows(min_row=2, max_col=3, max_row=len(pred_df) + 1):
-                    if row[1].value != row[2].value:
-                        row[1].fill = red_fill
-                        row[3].fill = red_fill
-                wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+                    wb = Workbook()
+                    ws = wb.active
+
+                    # 데이터프레임을 엑셀 시트로 변환
+                    for r in dataframe_to_rows(pred_df, index=False, header=True):
+                        ws.append(r) 
+                        
+                    red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                    for row in ws.iter_rows(min_row=2, max_col=7, max_row=len(pred_df) + 1):
+                        if row[1].value != row[3].value:
+                            row[1].fill = red_fill
+                            row[5].fill = red_fill
+                        if row[2].value != row[4].value:
+                            row[2].fill = red_fill
+                            row[6].fill = red_fill
+                    wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+            elif args.kd:
+                final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
+                pred, label = torch.tensor(pred).to(args.device), torch.tensor(label).to(args.device)
+                pred_noun , pred_verb, label_noun, label_verb = pred % 300, pred // 300, label % 300, label // 300
+                top1_noun = pred_noun == label_noun
+                top1_verb = pred_verb == label_verb
+                final_top1_noun = top1_noun.sum() / len(top1_noun) * 100
+                final_top1_verb = top1_verb.sum() / len(top1_verb) * 100
+                print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
+                log_stats = {'Epoch': current_epoch,
+                            'Final top-1': final_top1,
+                            'Final Top-5': final_top5,
+                            'Final Top-1 Noun': final_top1_noun,
+                            'Final Top-1 Verb': final_top1_verb,
+                            'confidences': np.array(conf).mean()}
+                if args.output_dir and utils.is_main_process():
+                    with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
+                        f.write(json.dumps(log_stats) + "\n")
+                        
+                # ======== save prediction result ======== #
+                video_ids = [''.join(x).replace(' ','') for x in video_ids]
+                pred_noun = [class_list[0][i] for i in pred_noun]
+                pred_verb = [class_list[3][i] for i in pred_verb]
+                label_noun = [class_list[0][int(i)] for i in label_noun]
+                label_verb = [class_list[3][int(i)] for i in label_verb]
+                pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf':conf})
+                pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
+                pred_df['conf'] = (pred_df['conf']).round(4)
+                pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+                
+                if args.xlsx:
+                    from openpyxl import Workbook
+                    from openpyxl.styles import PatternFill
+                    from openpyxl.utils.dataframe import dataframe_to_rows
+
+                    wb = Workbook()
+                    ws = wb.active
+
+                    # 데이터프레임을 엑셀 시트로 변환
+                    for r in dataframe_to_rows(pred_df, index=False, header=True):
+                        ws.append(r) 
+                        
+                    red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                    for row in ws.iter_rows(min_row=2, max_col=6, max_row=len(pred_df) + 1):
+                        if row[1].value != row[3].value:
+                            row[1].fill = red_fill
+                            row[5].fill = red_fill
+                        if row[2].value != row[4].value:
+                            row[2].fill = red_fill
+                            row[5].fill = red_fill
+                    wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+            else:
+                final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
+                print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
+                log_stats = {'Final top-1': final_top1, 
+                            'Final Top-5': final_top5,
+                            'confidences': np.array(conf).mean()}
+                if args.output_dir and utils.is_main_process():
+                    with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
+                        f.write(json.dumps(log_stats) + "\n")
+                
+                # ======== save prediction result ======== #
+                video_ids = [''.join(x).replace(' ','') for x in video_ids]
+                pred = [class_list[0][i] for i in pred]
+                label = [class_list[0][int(i)] for i in label]
+                pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'conf':conf})
+                pred_df['conf'] = (pred_df['conf']).round(4)
+                pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
+                
+                if args.xlsx:
+                    from openpyxl import Workbook
+                    from openpyxl.styles import PatternFill
+                    from openpyxl.utils.dataframe import dataframe_to_rows
+
+                    wb = Workbook()
+                    ws = wb.active
+                    
+                    # 데이터프레임을 엑셀 시트로 변환
+                    for r in dataframe_to_rows(pred_df, index=False, header=True):
+                        ws.append(r) 
+
+                    red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                    for row in ws.iter_rows(min_row=2, max_col=4, max_row=len(pred_df) + 1):
+                        if row[1].value != row[2].value:
+                            row[1].fill = red_fill
+                            row[3].fill = red_fill
+                    wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
     
 
     total_time = time.time() - start_time

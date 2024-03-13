@@ -93,7 +93,9 @@ def train_one_epoch(args,model: torch.nn.Module, criterion: torch.nn.Module,
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
 
         if not math.isfinite(loss_value):
-            print("Loss is {}, stopping training".format(loss_value))
+            print("Loss is {}, stopping training force".format(loss_value), force=True)
+            print("Loss is {}, stopping training file".format(loss_value), file=sys.stderr)
+            print("Loss is {}, stopping training file force".format(loss_value), file=sys.stderr, force=True)
             sys.exit(1)
 
         if loss_scaler is None:

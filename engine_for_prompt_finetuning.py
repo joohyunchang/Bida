@@ -106,7 +106,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         top1_acc, top5_acc = accuracy(logits, target, topk=(1, 5))
 
         if not math.isfinite(loss_value):
-            print("Loss is {}, stopping training".format(loss_value))
+            print("Loss is {}, stopping training".format(loss_value), force=True)
             sys.exit(1)
 
         if loss_scaler is None:
@@ -202,12 +202,12 @@ def validation_one_epoch(args, data_loader, model, device, class_list):
         
         # compute output
         with torch.cuda.amp.autocast():
-            if idx == 0:
-                outputs_video, textFeature = model(videos, textlist)
-            else:
-                outputs_video, _ = model(videos, textlist[:1])
-            if textFeature.dim() == 3 and outputs_video.shape[0] != textFeature.shape[0]:
-                _, textFeature = model(videos, textlist)
+            outputs_video, textFeature = model(videos, textlist)
+            # if idx == 0:
+            # else:
+            #     outputs_video, _ = model(videos, textlist[:1])
+            # if textFeature.dim() == 3 and outputs_video.shape[0] != textFeature.shape[0]:
+            #     _, textFeature = model(videos, textlist)
                 
             if featnorm:
                 outputs_video = outputs_video / outputs_video.norm(dim=-1, keepdim=True)

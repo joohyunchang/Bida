@@ -850,7 +850,8 @@ def main(args, ds_init):
             else:
                 final_top1 ,final_top5, pred, label, video_ids, conf = merge(args.output_dir, num_tasks, return_result=True)
                 print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1: {final_top1:.2f}%, Top-5: {final_top5:.2f}%")
-                log_stats = {'Final top-1': final_top1, 
+                log_stats = {'Epoch': current_epoch,
+                            'Final top-1': final_top1, 
                             'Final Top-5': final_top5,
                             'confidences': np.array(conf).mean()}
                 if args.output_dir and utils.is_main_process():

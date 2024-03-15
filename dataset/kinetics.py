@@ -11,8 +11,10 @@ from decord import VideoReader, cpu
 from torch.utils.data import Dataset
 import util_tools.video_transforms as video_transforms 
 import util_tools.volume_transforms as volume_transforms
+from util_tools.audio_transforms import Spectrogram
 import torchaudio
 import random
+import torch
 
 class VideoClsDataset(Dataset):
     """Load your own video classification dataset."""
@@ -24,6 +26,7 @@ class VideoClsDataset(Dataset):
         self.anno_path = anno_path
         self.data_path = data_path
         self.audio_path = args.audio_path
+        self.data_set = args.data_set
         self.mode = mode
         self.clip_len = clip_len
         self.frame_sample_rate = frame_sample_rate
@@ -39,7 +42,6 @@ class VideoClsDataset(Dataset):
         self.args = args
         self.aug = False
         self.rand_erase = False
-        self.audio_type = args.audio_type
         self.disable_video = False
         if self.mode in ['train']:
             self.aug = True
@@ -47,11 +49,18 @@ class VideoClsDataset(Dataset):
                 self.rand_erase = True
         if VideoReader is None:
             raise ImportError("Unable to import `decord` which is required to read videos.")
-        # if self.audio_path is not None:
-        #     self._spectrogram_init(resampling_rate=24000)
+        if self.audio_path is not None:
+            self.audio_type = args.audio_type
+            self.realtime_audio = args.realtime_audio
+            # if args.audio_height != 224 or args.audio_width != 224:
+            #     self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=1024)
+            # else:
+            self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048)
+          
 
         import pandas as pd
         cleaned = pd.read_csv(self.anno_path, header=0, delimiter=',')
+        # self.dataset_samples = list(cleaned.values[:, 0])[:1000] if mode == 'train' else list(cleaned.values[:, 0])
         self.dataset_samples = list(cleaned.values[:, 0])
         self.label_array = list(cleaned.values[:, 1])
         self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 2]) for i in range(len(cleaned))} if args.narration else None
@@ -94,8 +103,28 @@ class VideoClsDataset(Dataset):
 
             # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
             caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
-            spec = {}
+            if self.audio_path is not None:
+                audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
+                if os.path.exists(audio_trim_path) and not self.realtime_audio:
+                    spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type, data_set=self.data_set)
+                    if args.spec_augment:
+                        spec = self.spectrogram.spec_augment(spec)
+                else:
+                    audio_id = self.dataset_samples[index]
+                    audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
+                    try:
+                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
+                        if args.spec_augment:
+                            spec = self.spectrogram.spec_augment(spec)
+                    except:
+                        print("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]), force=True)
+                        warnings.warn("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
+                        spec = torch.random((3, 16, 224, 224))
+            else:
+                spec = {}
 
+            
             sample = self.dataset_samples[index] + '.mp4'
             sample = os.path.join(self.data_path, 'train', sample)
             if self.disable_video:
@@ -129,7 +158,22 @@ class VideoClsDataset(Dataset):
         elif self.mode == 'validation':
             # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
             caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
-            spec = {}
+            if self.audio_path is not None:
+                audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
+                if os.path.exists(audio_trim_path) and not self.realtime_audio:
+                    spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type, data_set=self.data_set)
+                else:
+                    audio_id = self.dataset_samples[index]
+                    audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
+                    try:
+                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
+                    except:
+                        print("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]), force=True)
+                        warnings.warn("Warning, audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
+                        spec = torch.random((3, 16, 224, 224))
+            else:
+                spec = {}
 
             sample = self.dataset_samples[index] + '.mp4'
             sample = os.path.join(self.data_path, 'val', sample)
@@ -150,7 +194,23 @@ class VideoClsDataset(Dataset):
         elif self.mode == 'test':
             # caption = random.choice(self.narration_array[self.test_dataset[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
             caption = random.choice(self.narration_array[self.test_dataset[index]]) if self.narration_array is not None else None
-            spec = {}
+            if self.audio_path is not None:
+                audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.test_dataset[index] + '.npy')
+                audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
+                if os.path.exists(audio_trim_path) and not self.realtime_audio:
+                    spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type, data_set=self.data_set)
+                else:
+                    audio_id = self.test_dataset[index]
+                    audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
+                    try:
+                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
+                    except:
+                        print("audio {} not correctly loaded during training, {}".format(audio_sample, self.test_dataset[index]), force=True)
+                        warnings.warn("Warning, audio {} not correctly loaded during training, {}".format(audio_sample, self.test_dataset[index]))
+                        spec = torch.random((3, 16, 224, 224))
+            else:
+                spec = {}
+                
             sample = self.test_dataset[index] + '.mp4'
             sample = os.path.join(self.data_path, 'test', sample)
             chunk_nb, split_nb = self.test_seg[index]

@@ -12,6 +12,7 @@ import util_tools.volume_transforms as volume_transforms
 from util_tools.audio_transforms import Spectrogram
 import torchaudio
 import random
+import torch
 
 class EpicVideoClsDataset(Dataset):
      def __init__(self, anno_path, data_path, mode='train', clip_len=8,

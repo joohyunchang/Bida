@@ -11,7 +11,7 @@ import util_tools.video_transforms as video_transforms
 import util_tools.volume_transforms as volume_transforms
 import torchaudio
 import random
-
+import torch
 
 class DivingVideoClsDataset(Dataset):
     """Load your own video classification dataset."""

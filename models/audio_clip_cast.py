@@ -185,11 +185,17 @@ class CrossAttentionS2T(nn.Module):
         all_head_dim = head_dim * self.num_head
         self.attn_all_frame = attn_all_frame
         if not attn_all_frame:
+            # self.clip_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
+            # self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.clip_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
+            self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
+        else:
+            # self.clip_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            # self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
             self.clip_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
             self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
-        else:
-            self.clip_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
-            self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.clip_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
+            self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
 
         self.s2t_q = nn.Linear(dim, all_head_dim, bias=False)
         self.s2t_q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -206,19 +212,35 @@ class CrossAttentionS2T(nn.Module):
         s_x_pat = s_x[1:, :, :]
         t_x_cls, t_x_pat = t_x[:1, :, :], t_x[1:, :, :]
         if not self.attn_all_frame:
-            s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
-            s_x_pat = s_x_pat + self.clip_space_pos
+            # s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
+            # s_x_pat = s_x_pat + self.clip_space_pos
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b n t d', t=self.spec_frames)
+            s_x_pat = s_x_pat + self.clip_temporal_pos
+            s_x_pat = rearrange(s_x_pat, 'b n t d -> (b t) n d')
             if self.spec_frames != self.num_frames:
                 exp = t // self.spec_frames
                 s_x_pat = s_x_pat.unsqueeze(1).expand([-1 , exp, -1, -1])
                 s_x_pat = rearrange(s_x_pat, 'b t n d -> (b t) n d')
-            t_x_pat = rearrange(t_x_pat, 'n (b t) d -> (b t) n d', t=t)
-            t_x_pat = t_x_pat + self.vmae_space_pos
+            # t_x_pat = rearrange(t_x_pat, 'n (b t) d -> (b t) n d', t=t)
+            # t_x_pat = t_x_pat + self.vmae_space_pos
+            t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b n t d', t=t)
+            t_x_pat = t_x_pat + self.vmae_temporal_pos
+            t_x_pat = rearrange(t_x_pat, 'b n t d -> (b t) n d')
         else:
-            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
-            s_x_pat = s_x_pat + self.clip_st_pos
-            t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b (n t) d', t=t)
-            t_x_pat = t_x_pat + self.vmae_st_pos
+            # s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
+            # s_x_pat = s_x_pat + self.clip_st_pos
+            # t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b (n t) d', t=t)
+            # t_x_pat = t_x_pat + self.vmae_st_pos
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b t n d', t=self.spec_frames)
+            s_x_pat = s_x_pat + self.clip_space_pos
+            s_x_pat = rearrange(s_x_pat, 'b t n d -> b n t d')
+            s_x_pat = s_x_pat + self.clip_temporal_pos
+            s_x_pat = rearrange(s_x_pat, 'b n t d -> b (n t) d')
+            t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b t n d', t=t)
+            t_x_pat = t_x_pat + self.vmae_space_pos
+            t_x_pat = rearrange(t_x_pat, 'b t n d -> b n t d')
+            t_x_pat = t_x_pat + self.vmae_temporal_pos
+            t_x_pat = rearrange(t_x_pat, 'b n t d -> b (n t) d')
         s2t_q_bias = self.s2t_q_bias
         s2t_kv_bias = self.s2t_kv_bias
         
@@ -260,11 +282,17 @@ class CrossAttentionT2S(nn.Module):
         all_head_dim = head_dim * self.num_head
         self.attn_all_frame = attn_all_frame
         if not attn_all_frame:
+            # self.clip_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
+            # self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.clip_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
+            self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
+        else:
+            # self.clip_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            # self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
             self.clip_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
             self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
-        else:
-            self.clip_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
-            self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            self.clip_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
+            self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
         
         self.t2s_q = nn.Linear(dim, all_head_dim, bias=False) # 197 tokens(cls+patch) * num_frames
         self.t2s_q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -281,19 +309,35 @@ class CrossAttentionT2S(nn.Module):
         s_x_cls, s_x_pat = s_x[0, :, :], s_x[1:, :, :]
         t_x_pat = t_x[1:, :, :]
         if not self.attn_all_frame:
-            s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
-            s_x_pat = s_x_pat + self.clip_space_pos
+            # s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
+            # s_x_pat = s_x_pat + self.clip_space_pos
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b n t d', t=self.spec_frames)
+            s_x_pat = s_x_pat + self.clip_temporal_pos
+            s_x_pat = rearrange(s_x_pat, 'b n t d -> (b t) n d')
             if self.spec_frames != self.num_frames:
                 exp = t // self.spec_frames
                 s_x_pat = s_x_pat.unsqueeze(1).expand([-1 , t, -1, -1])
                 s_x_pat = rearrange(s_x_pat, 'b t n d -> (b t) n d')
-            t_x_pat = rearrange(t_x_pat, 'n (b t) d -> (b t) n d', t=t)
-            t_x_pat = t_x_pat + self.vmae_space_pos
+            # t_x_pat = rearrange(t_x_pat, 'n (b t) d -> (b t) n d', t=t)
+            # t_x_pat = t_x_pat + self.vmae_space_pos
+            t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b n t d', t=t)
+            t_x_pat = t_x_pat + self.vmae_temporal_pos
+            t_x_pat = rearrange(t_x_pat, 'b n t d -> (b t) n d')
         else:
-            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
-            s_x_pat = s_x_pat + self.clip_st_pos
-            t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b (n t) d', t=t)
-            t_x_pat = t_x_pat + self.vmae_st_pos
+            # s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
+            # s_x_pat = s_x_pat + self.clip_st_pos
+            # t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b (n t) d', t=t)
+            # t_x_pat = t_x_pat + self.vmae_st_pos
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b t n d', t=self.spec_frames)
+            s_x_pat = s_x_pat + self.clip_space_pos
+            s_x_pat = rearrange(s_x_pat, 'b t n d -> b n t d')
+            s_x_pat = s_x_pat + self.clip_temporal_pos
+            s_x_pat = rearrange(s_x_pat, 'b n t d -> b (n t) d')
+            t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b t n d', t=t)
+            t_x_pat = t_x_pat + self.vmae_space_pos
+            t_x_pat = rearrange(t_x_pat, 'b t n d -> b n t d')
+            t_x_pat = t_x_pat + self.vmae_temporal_pos
+            t_x_pat = rearrange(t_x_pat, 'b n t d -> b (n t) d')
         t2s_q_bias = self.t2s_q_bias
         t2s_kv_bias = self.t2s_kv_bias
         
@@ -724,6 +768,14 @@ def compo_single_audio_clip_CA9_vit_base_patch16_224(pretrained=False, **kwargs)
 #         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
 #         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, CA=0, spec_frames=16, attn_all_frame=True, **kwargs)
 #     return model
+
+
+@register_model
+def compo_single_fbf_audio_clip_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=False, **kwargs)
+    return model
 
 @register_model
 def compo_stacks_audio_clip_vit_base_patch16_224(pretrained=False, **kwargs):

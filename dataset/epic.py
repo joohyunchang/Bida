@@ -47,10 +47,10 @@ class EpicVideoClsDataset(Dataset):
                self.audio_type = args.audio_type
                self.realtime_audio = args.realtime_audio
                # self._spectrogram_init(resampling_rate=24000)
-               if args.audio_height != 224 or args.audio_width != 224:
-                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=1024)
-               else:
-                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width)
+               # if args.audio_height != 224 or args.audio_width != 224:
+               #      self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=1024)
+               # else:
+               self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048)
                
           
           import pandas as pd

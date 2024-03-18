@@ -4,7 +4,7 @@ import numpy as np
 import random
 
 class Spectrogram:
-    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=447, resampling_rate=24000):
+    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000):
         nperseg = int(round(window_size * resampling_rate / 1e3))
         noverlap = int(round(step_size * resampling_rate / 1e3))
         self.num_segment = num_segment
@@ -94,22 +94,21 @@ class Spectrogram:
         elif audio_type == 'all8':
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
-        elif audio_type in ['stacks','single']:
+        elif audio_type in ['stacks','single','stackss']:
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             stack_dim = spec.shape[1]
-            if audio_type == 'stacks':
+            if audio_type in ['stacks','stackss']:
                 idx = np.round(np.linspace(0, stack_dim - 1, self.num_segment)).astype(int).tolist()
                 spec = spec[:, idx, :, :]
             else:
                 spec = spec[:, (stack_dim-1)//2, :, :]
-        elif audio_type in ['onespec', 'single1024']:
+        elif audio_type in ['onespec', 'single1024','single1024s']:
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         else:
             pass
         return spec
         
-        
-    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test', data_set='EPIC'):
+    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test', data_set='EPIC', extract=False):
         samples, sample_rate = torchaudio.load(sample)
         samples = samples.squeeze(0)
         if data_set == 'Kinetics-400':
@@ -176,7 +175,7 @@ class Spectrogram:
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
-        elif audio_type in ['stacks','single','single1024']:
+        elif audio_type in ['stacks','single','single1024','stackss','single1024s']:
             stride = int(length_sample // length)
             if stride > 0:
                 samples = torch.stack([samples[left_sample+(i*length):left_sample+((i+1)*length)] for i in range(stride)],dim=0)
@@ -191,9 +190,9 @@ class Spectrogram:
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             stack_dim = spec.shape[1]
-            if audio_type == 'stacks':
+            if audio_type in ['stacks','stackss']:
                 idx = np.round(np.linspace(0, stack_dim - 1, self.num_segment)).astype(int).tolist()
-                spec = spec[:, idx, :, :]
+                spec = spec[:, idx, :, :] if not extract else spec
             else:
                 spec = spec[:, (stack_dim-1)//2, :, :]
         elif audio_type == 'onespec':

@@ -413,6 +413,22 @@ def load_bidir_weights(model, args):
             elif not key.startswith('module.visual.'):
                 new_dict['clip_text_' + key[7:]] = checkpoint_clip[key]
         new_dict['clip_text_text_projection'] = checkpoint_clip['module.text_projection']
+    elif args.audio_finetune is not None:
+        ckeckpoint = torch.load(args.audio_finetune, map_location='cpu')
+        ckeckpoint = ckeckpoint['model']
+        for key in ckeckpoint:
+            if key.startswith('encoder.layers.'):
+                new_dict['blocks.'+ key[15:]] = ckeckpoint[key]
+                # if key[14] == '.' and key[16] == '.':
+                #     new_dict['blocks.'+ key[15] + '.' + key[17:]] = ckeckpoint[key]
+                # elif key[14] == '.' and key[17] == '.':
+                #     new_dict['blocks.'+ key[15:17] + '.' + key[18:]] = ckeckpoint[key]
+            elif key.startswith('encoder.layer_norm.'):
+                new_dict[key[8:18]+'_first'+key[18:]] = ckeckpoint[key]
+            elif key.startswith('encoder.pos_conv'):
+                new_dict[key[8:]] = ckeckpoint[key]
+            else:
+                new_dict[key] = ckeckpoint[key]
     elif args.audio_path is not None:
         for key in clip_all_keys:
             if key.startswith('transformer.'):

@@ -188,8 +188,12 @@ class CrossAttentionS2Audio(nn.Module):
             self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
             self.audio_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
         else:
-            self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
-            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            # self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            # self.audio_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.audio_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
+            self.clip_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
+            self.audio_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
         
         self.q = nn.Linear(audio_dim, all_head_dim, bias=False)
         self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -208,10 +212,21 @@ class CrossAttentionS2Audio(nn.Module):
             audio_pat = rearrange(audio_pat, 'n b d -> b n d') # batch -> token
             audio_pat = audio_pat + self.audio_space_pos
         else:
-            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
-            s_x_pat = s_x_pat + self.clip_st_pos
-            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
-            audio_pat = audio_pat + self.audio_st_pos
+            # s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            # s_x_pat = s_x_pat + self.clip_st_pos
+            # audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
+            # audio_pat = audio_pat + self.audio_st_pos
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b t n d', t=t)
+            s_x_pat = s_x_pat + self.clip_space_pos
+            s_x_pat = rearrange(s_x_pat, 'b t n d -> b n t d')
+            s_x_pat = s_x_pat + self.clip_temporal_pos
+            s_x_pat = rearrange(s_x_pat, 'b n t d -> b (n t) d')
+            
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b t n d', t=self.spec_frames)
+            audio_pat = audio_pat + self.audio_space_pos
+            audio_pat = rearrange(audio_pat, 'b t n d -> b n t d')
+            audio_pat = audio_pat + self.audio_temporal_pos
+            audio_pat = rearrange(audio_pat, 'b n t d -> b (n t) d')
         
         q = F.linear(input=audio_pat, weight=self.q.weight, bias=self.q_bias)
         q = rearrange(q, 'b n (h d) -> b h n d', h=self.num_head)
@@ -255,9 +270,13 @@ class CrossAttentionAudio2S(nn.Module):
             self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
             self.audio_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
         else:
-            self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
-            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
-        
+            # self.clip_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            # self.audio_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.audio_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
+            self.clip_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
+            self.audio_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
+            
         self.q = nn.Linear(dim, all_head_dim, bias=False)
         self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
         self.kv = nn.Linear(audio_dim, all_head_dim * 2, bias=False) # 197 tokens(cls+patch) * num_frames
@@ -275,10 +294,21 @@ class CrossAttentionAudio2S(nn.Module):
             audio_pat = rearrange(audio_pat, 'n b d -> b n d') # batch -> token
             audio_pat = audio_pat + self.audio_space_pos
         else:
-            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
-            s_x_pat = s_x_pat + self.clip_st_pos
-            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
-            audio_pat = audio_pat + self.audio_st_pos
+            # s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=t) # batch -> token
+            # s_x_pat = s_x_pat + self.clip_st_pos
+            # audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
+            # audio_pat = audio_pat + self.audio_st_pos
+            s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b t n d', t=t)
+            s_x_pat = s_x_pat + self.clip_space_pos
+            s_x_pat = rearrange(s_x_pat, 'b t n d -> b n t d')
+            s_x_pat = s_x_pat + self.clip_temporal_pos
+            s_x_pat = rearrange(s_x_pat, 'b n t d -> b (n t) d')
+            
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b t n d', t=self.spec_frames)
+            audio_pat = audio_pat + self.audio_space_pos
+            audio_pat = rearrange(audio_pat, 'b t n d -> b n t d')
+            audio_pat = audio_pat + self.audio_temporal_pos
+            audio_pat = rearrange(audio_pat, 'b n t d -> b (n t) d')
         
         q = F.linear(input=s_x_pat, weight=self.q.weight, bias=self.q_bias)
         q = rearrange(q, 'b n (h d) -> b h n d', h=self.num_head)
@@ -322,8 +352,12 @@ class CrossAttentionT2Audio(nn.Module):
             self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
             self.audio_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
         else:
-            self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
-            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            # self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            # self.audio_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.audio_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
+            self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
+            self.audio_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
         
         self.q = nn.Linear(audio_dim, all_head_dim, bias=False)
         self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -342,9 +376,20 @@ class CrossAttentionT2Audio(nn.Module):
             audio_pat = rearrange(audio_pat, 'n b d -> b n d') # batch -> token
             audio_pat = audio_pat + self.audio_space_pos
         else:
-            t_x = t_x + self.vmae_st_pos
-            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
-            audio_pat = audio_pat + self.audio_st_pos
+            # t_x = t_x + self.vmae_st_pos
+            # audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
+            # audio_pat = audio_pat + self.audio_st_pos
+            t_x = rearrange(t_x, 'b (t n) d -> b t n d', t=t)
+            t_x = t_x + self.vmae_space_pos
+            t_x = rearrange(t_x, 'b t n d -> b n t d')
+            t_x = t_x + self.vmae_temporal_pos
+            t_x = rearrange(t_x, 'b n t d -> b (t n) d')
+            
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b t n d', t=self.spec_frames)
+            audio_pat = audio_pat + self.audio_space_pos
+            audio_pat = rearrange(audio_pat, 'b t n d -> b n t d')
+            audio_pat = audio_pat + self.audio_temporal_pos
+            audio_pat = rearrange(audio_pat, 'b n t d -> b (n t) d')
         
         q = F.linear(input=audio_pat, weight=self.q.weight, bias=self.q_bias)
         q = rearrange(q, 'b n (h d) -> b h n d', h=self.num_head)
@@ -388,8 +433,12 @@ class CrossAttentionAudio2T(nn.Module):
             self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
             self.audio_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
         else:
-            self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
-            self.audio_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            # self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            # self.audio_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+            self.audio_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
+            self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
+            self.audio_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
         
         self.q = nn.Linear(dim, all_head_dim, bias=False)
         self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -408,9 +457,20 @@ class CrossAttentionAudio2T(nn.Module):
             audio_pat = rearrange(audio_pat, 'n b d -> b n d') # batch -> token
             audio_pat = audio_pat + self.audio_space_pos
         else:
-            t_x = t_x + self.vmae_st_pos
-            audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
-            audio_pat = audio_pat + self.audio_st_pos
+            # t_x = t_x + self.vmae_st_pos
+            # audio_pat = rearrange(audio_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
+            # audio_pat = audio_pat + self.audio_st_pos
+            t_x = rearrange(t_x, 'b (t n) d -> b t n d', t=t)
+            t_x = t_x + self.vmae_space_pos
+            t_x = rearrange(t_x, 'b t n d -> b n t d')
+            t_x = t_x + self.vmae_temporal_pos
+            t_x = rearrange(t_x, 'b n t d -> b (t n) d')
+            
+            audio_pat = rearrange(audio_pat, 'n (b t) d -> b t n d', t=self.spec_frames)
+            audio_pat = audio_pat + self.audio_space_pos
+            audio_pat = rearrange(audio_pat, 'b t n d -> b n t d')
+            audio_pat = audio_pat + self.audio_temporal_pos
+            audio_pat = rearrange(audio_pat, 'b n t d -> b (n t) d')
         
         q = F.linear(input=t_x, weight=self.q.weight, bias=self.q_bias)
         q = rearrange(q, 'b n (h d) -> b h n d', h=self.num_head)

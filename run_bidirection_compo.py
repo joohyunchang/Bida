@@ -32,6 +32,7 @@ import models.cast_Bsquare
 import models.AIM_cls
 import models.audio_cast
 import models.audio_clip_cast
+import models.beats_clip_cast
 from models.prompt import text_prompt
 import pandas as pd
 # from models.paraphrase import paraphrase
@@ -218,6 +219,7 @@ def get_args():
                         help='Perform evaluation only')
     parser.add_argument('--xlsx', action='store_true', default=False)
     parser.add_argument('--text_finetune',default=None, help='finetune from clip checkpoint')
+    parser.add_argument('--audio_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
     parser.add_argument('--audio_path', default=None, type=str, help='audio path')
     parser.add_argument('--collate', action='store_true', default=False)

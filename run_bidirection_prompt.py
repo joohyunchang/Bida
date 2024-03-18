@@ -219,6 +219,7 @@ def get_args():
     parser.add_argument('--kd', action='store_true', default=False)
     parser.add_argument('--xlsx', action='store_true', default=False)
     parser.add_argument('--text_finetune',default=None, help='finetune from clip checkpoint')
+    parser.add_argument('--audio_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--text_dim',default=512, type=int, help='text dim set')
     parser.add_argument('--both', action='store_true', default=False)
     parser.add_argument('--one_head', action='store_true', default=False)

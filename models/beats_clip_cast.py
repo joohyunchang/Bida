@@ -388,6 +388,7 @@ class Block(nn.Module):
         self.CA = CA
         self.use_Adapter = use_Adapter
         self.audio_patch = audio_patch
+        self.spec_frames = spec_frames
         
         ###################################### MHSA code #####################################
         ############################ BEATs MHSA ###########################
@@ -463,7 +464,7 @@ class Block(nn.Module):
         return self.clip_attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
     def forward(self, s_x, t_x, pos_bias=None):
-        B = t_x.shape[0]
+        B = s_x.shape[1] // self.spec_frames
         n, bt, _ = s_x.shape
         num_frames = bt//B
         
@@ -473,7 +474,7 @@ class Block(nn.Module):
             query=s_x,
             key=s_x,
             value=s_x,
-            key_padding_mask=torch.zeros(16,self.audio_patch, device=t_x.device).bool(),
+            key_padding_mask=torch.zeros(B, self.audio_patch, device=t_x.device).bool(),
             need_weights=False,
             attn_mask=None,
             position_bias=pos_bias

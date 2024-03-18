@@ -113,6 +113,7 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
+                    audio_trim_path = audio_trim_path.replace("singles", "stackss") if self.audio_type == 'singles' else audio_trim_path
                     if os.path.exists(audio_trim_path) and not self.realtime_audio:
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                          if args.spec_augment:
@@ -167,6 +168,7 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
+                    audio_trim_path = audio_trim_path.replace("singles", "stackss") if self.audio_type == 'singles' else audio_trim_path
                     if os.path.exists(audio_trim_path) and not self.realtime_audio:
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
@@ -200,6 +202,7 @@ class EpicVideoClsDataset(Dataset):
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.test_dataset[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
+                    audio_trim_path = audio_trim_path.replace("singles", "stackss") if self.audio_type == 'singles' else audio_trim_path
                     if os.path.exists(audio_trim_path) and not self.realtime_audio:
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:

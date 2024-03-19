@@ -749,30 +749,36 @@ class STCrossTransformer(nn.Module):
         return s_x, t_x
 
     def forward(self, x, caption=None, spec=None):
-        # if spec is not None:
-        #     spec = torch.stack(spec, dim=0)
-        if self.audio_enabled:
-            s_x, t_x = self.forward_features(x, spec)
-            x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
-            # x = self.verb_last_Adapter(t_x)
-            s_x = self.head_noun_dropout(x)
-            s_x = self.head_noun(s_x)
-            t_x = self.head_verb_dropout(x)
-            t_x = self.head_verb(t_x)
-            return s_x, t_x
-        elif self.composition:
-            s_x, t_x = self.forward_features(x, spec)
-            s_x = self.head_noun_dropout(s_x)
-            s_x = self.head_noun(s_x)
-            t_x = self.head_verb_dropout(t_x)
-            t_x = self.head_verb(t_x)
-            return s_x, t_x
+        if self.composition:
+            if self.audio_enabled:
+                s_x, t_x = self.forward_features(x, spec)
+                x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+                # x = self.verb_last_Adapter(t_x)
+                s_x = self.head_noun_dropout(x)
+                s_x = self.head_noun(s_x)
+                t_x = self.head_verb_dropout(x)
+                t_x = self.head_verb(t_x)
+                return s_x, t_x
+            else:
+                s_x, t_x = self.forward_features(x, spec)
+                s_x = self.head_noun_dropout(s_x)
+                s_x = self.head_noun(s_x)
+                t_x = self.head_verb_dropout(t_x)
+                t_x = self.head_verb(t_x)
+                return s_x, t_x
         else:
-            s_x, t_x = self.forward_features(x)
-            x = (self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x))/2
-            x = self.head_dropout(x)
-            x = self.head(x)
-            return x
+            if self.audio_enabled:
+                s_x, t_x = self.forward_features(x, spec)
+                x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+                x = self.head_dropout(x)
+                x = self.head(x)
+                return x
+            else:
+                s_x, t_x = self.forward_features(x)
+                x = (self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x))/2
+                x = self.head_dropout(x)
+                x = self.head(x)
+                return x
 
 # @register_model
 # def bidir_vit_base_patch16_224(pretrained=False, **kwargs):
@@ -787,6 +793,13 @@ class STCrossTransformer(nn.Module):
 #         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
 #         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
 #     return model
+
+@register_model
+def single_beats_clip_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=True, **kwargs)
+    return model
 
 @register_model
 def compo_single_beats_clip_vit_base_patch16_224(pretrained=False, **kwargs):

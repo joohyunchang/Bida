@@ -397,17 +397,29 @@ class Block(nn.Module):
             self.T_Adapter = Adapter(dim)
         ##################################################################
         #########################################################################################
+        self.after_Adapter = True
         
         if num_layer >= self.CA:
             ###################################### Cross attention ####################################
-            self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
-            self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
-            self.ln_s_cross = norm_layer(dim//self.down_ratio)
-            self.ln_t_cross = norm_layer(dim//self.down_ratio)
-            self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
-            self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
-            self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
-            self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
+            if not self.after_Adapter:
+                self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
+                self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
+                self.ln_s_cross = norm_layer(dim//self.down_ratio)
+                self.ln_t_cross = norm_layer(dim//self.down_ratio)
+                self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
+                self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
+                self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
+                self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
+            else:
+                self.t2s_cross = CrossAttentionT2S(dim, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
+                self.s2t_cross = CrossAttentionS2T(dim, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
+                self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
+                self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
+                self.ln_s_cross = norm_layer(dim//self.down_ratio)
+                self.ln_t_cross = norm_layer(dim//self.down_ratio)
+                self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
+                self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
+                
             ###########################################################################################
         
         ###################################### FFN code #########################################
@@ -456,12 +468,20 @@ class Block(nn.Module):
         
         if self.num_layer >= self.CA:
             ############################ Cross Forward #############################
-            n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
-            n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
-            c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x)))
-            c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x)))
-            s_x = s_x + self.drop_path(c_s_x)
-            t_x = t_x + self.drop_path(c_t_x)
+            if not self.after_Adapter:
+                n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
+                n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
+                c_s_x = self.cross_s_up(self.act(self.t2s_cross(n_s_x, n_t_x)))
+                c_t_x = self.cross_t_up(self.act(self.s2t_cross(n_s_x, n_t_x)))
+                s_x = s_x + self.drop_path(c_s_x)
+                t_x = t_x + self.drop_path(c_t_x)
+            else:
+                n_s_x = self.ln_s_cross(self.cross_s_down(self.act(self.t2s_cross(s_x, t_x))))
+                n_t_x = self.ln_t_cross(self.cross_t_down(self.act(self.s2t_cross(s_x, t_x))))
+                c_s_x = self.cross_s_up(n_s_x)
+                c_t_x = self.cross_t_up(n_t_x)
+                s_x = s_x + self.drop_path(c_s_x)
+                t_x = t_x + self.drop_path(c_t_x)
             #########################################################################
         
         ############################ FFN Forward ##################################
@@ -661,30 +681,36 @@ class STCrossTransformer(nn.Module):
         return s_x, t_x
 
     def forward(self, x, caption=None, spec=None):
-        # if spec is not None:
-        #     spec = torch.stack(spec, dim=0)
-        if self.audio_enabled:
-            s_x, t_x = self.forward_features(x, spec)
-            x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
-            # x = self.verb_last_Adapter(t_x)
-            s_x = self.head_noun_dropout(x)
-            s_x = self.head_noun(s_x)
-            t_x = self.head_verb_dropout(x)
-            t_x = self.head_verb(t_x)
-            return s_x, t_x
-        elif self.composition:
-            s_x, t_x = self.forward_features(x, spec)
-            s_x = self.head_noun_dropout(s_x)
-            s_x = self.head_noun(s_x)
-            t_x = self.head_verb_dropout(t_x)
-            t_x = self.head_verb(t_x)
-            return s_x, t_x
+        if self.composition:
+            if self.audio_enabled:
+                s_x, t_x = self.forward_features(x, spec)
+                x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+                # x = self.verb_last_Adapter(t_x)
+                s_x = self.head_noun_dropout(x)
+                s_x = self.head_noun(s_x)
+                t_x = self.head_verb_dropout(x)
+                t_x = self.head_verb(t_x)
+                return s_x, t_x
+            else:
+                s_x, t_x = self.forward_features(x, spec)
+                s_x = self.head_noun_dropout(s_x)
+                s_x = self.head_noun(s_x)
+                t_x = self.head_verb_dropout(t_x)
+                t_x = self.head_verb(t_x)
+                return s_x, t_x
         else:
-            s_x, t_x = self.forward_features(x)
-            x = (self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x))/2
-            x = self.head_dropout(x)
-            x = self.head(x)
-            return x
+            if self.audio_enabled:
+                s_x, t_x = self.forward_features(x, spec)
+                x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+                x = self.head_dropout(x)
+                x = self.head(x)
+                return x
+            else:
+                s_x, t_x = self.forward_features(x)
+                x = (self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x))/2
+                x = self.head_dropout(x)
+                x = self.head(x)
+                return x
 
 # @register_model
 # def bidir_vit_base_patch16_224(pretrained=False, **kwargs):
@@ -699,6 +725,29 @@ class STCrossTransformer(nn.Module):
 #         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
 #         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
 #     return model
+
+@register_model
+def single_audio_clip_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=True, **kwargs)
+    return model
+
+@register_model
+def test_test(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
+        CA=9, spec_frames=1, attn_all_frame=True, down_ratio=1, **kwargs)
+    return model
+
+@register_model
+def compo_single_audio_noDown_CA9_clip_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
+        CA=9, spec_frames=1, attn_all_frame=True, down_ratio=2, **kwargs)
+    return model
 
 @register_model
 def compo_single_audio_clip_vit_base_patch16_224(pretrained=False, **kwargs):
@@ -748,11 +797,11 @@ def compo_single_audio_clip_CA0_down4_noAdap_Patch512_vit_base_patch16_224(pretr
     return model
 
 @register_model
-def compo_single_audio_clip_down4_noAdap_vit_base_patch16_224(pretrained=False, **kwargs):
+def compo_single_audio_clip_noAdap_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
-        CA=0, spec_frames=1, attn_all_frame=True, down_ratio=4, use_Adapter=False, **kwargs)
+        CA=0, spec_frames=1, attn_all_frame=True, down_ratio=2, use_Adapter=False, **kwargs)
     return model
 
 @register_model

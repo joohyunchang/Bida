@@ -9,6 +9,7 @@ from timm.models.registry import register_model
 from collections import OrderedDict
 from einops import rearrange
 import random
+import math
 
 
 def _cfg(url='', **kwargs):
@@ -373,7 +374,7 @@ class CrossAttentionT2S(nn.Module):
 class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None, 
-                 spec_frames=1, attn_all_frame=True, CA=0, use_Adapter=True, audio_patch=196):
+                 spec_frames=1, attn_all_frame=True, CA=0, use_Adapter=True, audio_patch=196, use_AIM=False):
         super().__init__()
         self.num_layer = num_layer
         self.num_heads = num_heads
@@ -381,14 +382,20 @@ class Block(nn.Module):
         self.scale = 0.5
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.act = act_layer()
+        self.num_frames = num_frames//2
         self.CA = CA
         self.use_Adapter = use_Adapter
+        self.use_AIM = use_AIM
         
         ###################################### MHSA code #####################################
         ############################ AIM MHSA ###########################
         self.clip_ln_1 = LayerNorm(dim)
         self.clip_attn = nn.MultiheadAttention(dim, num_heads)
         if self.use_Adapter:
+            if self.use_AIM:
+                self.WT_Adapter = Adapter(dim, skip_connect=False)
+                self.HT_Adapter = Adapter(dim, skip_connect=False)
+                self.CLS_Adapter = Adapter(dim)
             self.S_Adapter = Adapter(dim)
         ##################################################################
         
@@ -397,7 +404,7 @@ class Block(nn.Module):
             self.T_Adapter = Adapter(dim)
         ##################################################################
         #########################################################################################
-        self.after_Adapter = True
+        self.after_Adapter = False
         
         if num_layer >= self.CA:
             ###################################### Cross attention ####################################
@@ -450,11 +457,25 @@ class Block(nn.Module):
 
     def forward(self,s_x, t_x):
         B = t_x.shape[0]
-        n, bt, _ = s_x.shape
+        n, bt, _ = t_x.shape
         num_frames = bt//B
         
         ############################ MHSA Forward #############################
         if self.use_Adapter:
+            if self.use_AIM:
+                w=int(math.sqrt(n))
+                xt = t_x[1:,:,:]
+                xt = rearrange(xt, '(w h) (b t) d -> (w t) (b h) d', t=self.num_frames, w=w)
+                xwt = self.WT_Adapter(self.attention(self.clip_ln_1(xt)))
+                xt = xt + self.drop_path(xwt) # skip connection original + width time attention result
+                
+                xt = rearrange(xt, '(w t) (b h) d -> (h t) (b w) d', t=self.num_frames, h=w)
+                xht = self.HT_Adapter(self.attention(self.clip_ln_1(xt)))
+                xt = xt + self.drop_path(xht) # skip connection original + width time attention result
+                xt = rearrange(xt, '(h t) (b w) d -> (w h) (b t) d', h=w,w=w)
+                xt = torch.cat((t_x[0,:,:].unsqueeze(0), xt),0)
+                t_x = xt
+                
             # AIM Space MHSA
             s_x = s_x + self.S_Adapter(self.attention(self.clip_ln_1(s_x)))
             # VMAE Time MHSA
@@ -531,6 +552,7 @@ class STCrossTransformer(nn.Module):
                  CA=0,
                  use_Adapter=True,
                  audio_patch=196,
+                 use_AIM=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -561,7 +583,7 @@ class STCrossTransformer(nn.Module):
             Block(
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
-                init_values=init_values, num_layer=i, spec_frames=spec_frames, attn_all_frame=attn_all_frame, CA=CA, use_Adapter=use_Adapter, audio_patch=audio_patch)
+                init_values=init_values, num_layer=i, spec_frames=spec_frames, attn_all_frame=attn_all_frame, CA=CA, use_Adapter=use_Adapter, audio_patch=audio_patch, use_AIM=use_AIM)
             for i in range(depth)])
         
         self.audio_ln_post = LayerNorm(embed_dim)
@@ -757,11 +779,10 @@ def compo_single_audio_clip_vit_base_patch16_224(pretrained=False, **kwargs):
     return model
 
 @register_model
-def compo_single_audio_clip_Patch512_vit_base_patch16_224(pretrained=False, **kwargs):
+def compo_single_audio_AIM_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
-        CA=0, spec_frames=1, attn_all_frame=True, audio_patch=512, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=True, **kwargs)
     return model
 
 @register_model
@@ -770,14 +791,6 @@ def compo_single_audio_clip_down4_vit_base_patch16_224(pretrained=False, **kwarg
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
         CA=0, spec_frames=1, attn_all_frame=True, down_ratio=4, **kwargs)
-    return model
-
-@register_model
-def compo_single_audio_clip_down4_Patch512_vit_base_patch16_224(pretrained=False, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
-        CA=0, spec_frames=1, attn_all_frame=True, down_ratio=4, audio_patch=512, **kwargs)
     return model
 
 @register_model

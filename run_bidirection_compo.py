@@ -33,6 +33,7 @@ import models.AIM_cls
 import models.audio_cast
 import models.audio_clip_cast
 import models.beats_clip_cast
+import models.beats_Bsquare
 from models.prompt import text_prompt
 import pandas as pd
 # from models.paraphrase import paraphrase
@@ -273,7 +274,8 @@ def main(args, ds_init):
     # random.seed(seed)
 
     cudnn.benchmark = True
-
+    args.process_type = 'beats' if 'beats' in args.vmae_model else 'ast'
+    
     dataset_train, args.nb_classes = build_dataset(is_train=True, test_mode=False, args=args)
     if args.disable_eval_during_finetuning:
         dataset_val = None
@@ -363,26 +365,45 @@ def main(args, ds_init):
     args.window_size = 16
     args.patch_size = patch_size
     
+    
     if False:
         class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
     else:
         class_list = None
-    
-    model = create_model(
-          args.vmae_model,
-          pretrained=False,
-          num_classes=args.nb_classes,
-          all_frames=args.num_frames * args.num_segments,
-          tubelet_size=args.tubelet_size,
-          drop_rate=args.drop,
-          drop_path_rate=args.drop_path,
-          attn_drop_rate=args.attn_drop_rate,
-          drop_block_rate=None,
-          use_mean_pooling=args.use_mean_pooling,
-          init_scale=args.init_scale,
-          fusion_method=args.fusion_method,
-        #   head_drop_rate=args.head_drop
-      )
+    if args.audio_path is None:
+        model = create_model(
+            args.vmae_model,
+            pretrained=False,
+            num_classes=args.nb_classes,
+            all_frames=args.num_frames * args.num_segments,
+            tubelet_size=args.tubelet_size,
+            drop_rate=args.drop,
+            drop_path_rate=args.drop_path,
+            attn_drop_rate=args.attn_drop_rate,
+            drop_block_rate=None,
+            use_mean_pooling=args.use_mean_pooling,
+            init_scale=args.init_scale,
+            fusion_method=args.fusion_method,
+            #   head_drop_rate=args.head_drop
+        )
+    else:
+        print(f"Audio_Patch size = {args.audio_height*args.audio_width//(args.window_size*args.window_size)}")
+        model = create_model(
+            args.vmae_model,
+            pretrained=False,
+            num_classes=args.nb_classes,
+            all_frames=args.num_frames * args.num_segments,
+            tubelet_size=args.tubelet_size,
+            drop_rate=args.drop,
+            drop_path_rate=args.drop_path,
+            attn_drop_rate=args.attn_drop_rate,
+            drop_block_rate=None,
+            use_mean_pooling=args.use_mean_pooling,
+            init_scale=args.init_scale,
+            fusion_method=args.fusion_method,
+            audio_patch=args.audio_height*args.audio_width//(args.window_size*args.window_size)
+            #   head_drop_rate=args.head_drop
+        )
     
     if args.fine_tune is not None:
         laod_eval_weights(model, args.fine_tune, args)
@@ -484,6 +505,7 @@ def main(args, ds_init):
 
     print("criterion = %s" % str(criterion))
     print('number of params:', n_parameters)
+    print(f"Audio_Patch size = {args.audio_height*args.audio_width//(args.window_size*args.window_size)}")
     
     utils.auto_load_model(
         args=args, model=model, model_without_ddp=model_without_ddp,

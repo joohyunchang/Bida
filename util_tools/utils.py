@@ -315,6 +315,10 @@ def load_state_dict(model, state_dict, prefix='', ignore_missing="relative_posit
             prefix[:-1], {})
         module._load_from_state_dict(
             state_dict, prefix, local_metadata, True, missing_keys, unexpected_keys, error_msgs)
+        # module._load_from_state_dict(
+        #     state_dict=state_dict, prefix=prefix, local_metadata=local_metadata,
+        #     strict=True, missing_keys=missing_keys, unexpected_keys=unexpected_keys,
+        #     error_msgs=error_msgs)
         for name, child in module._modules.items():
             if child is not None:
                 load(child, prefix + name + '.')

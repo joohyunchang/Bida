@@ -1450,135 +1450,10 @@ class STCrossTransformer(nn.Module):
             x = self.head(x)
             return x
 
-
-@register_model
-def cast_Bsquare_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    textlist, textdict, texttoken = class_list
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, 
-        nounlist = textlist, noundict=textdict, nountoken=texttoken,
-        prefix = 16, postfix = 16, split_prompt = args.split_prompt, **kwargs)
-    return model
-
-
-# Text Bsquare
-
-@register_model
-def cast_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, CA=9, output_text_dim=512,
-        prefix = 16, postfix = 16, **kwargs)
-    return model
-
-@register_model
-def cast_Bsquare_CA9_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, CA=9, output_text_dim=512,
-        prefix = 16, postfix = 16, down_ratio=4, **kwargs)
-    return model
-
-@register_model
-def cast_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, CA=0, output_text_dim=512, 
-        prefix = 16, postfix = 16, use_textF=False, **kwargs)
-    return model
-
-@register_model
-def compo_cast_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=9, output_text_dim=512,
-        prefix = 16, postfix = 16, **kwargs)
-    return model
-
-@register_model
-def compo_cast_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=0, output_text_dim=512, 
-        prefix = 16, postfix = 16, use_textF=False, **kwargs)
-    return model
-
-
-# lavila text encoder
-
-@register_model
-def cast_Bsquare_CA9_lavila_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, CA=9, output_text_dim=256, 
-        prefix = 16, postfix = 16, **kwargs)
-    return model
-
-@register_model
-def cast_Bsquare_CA0_lavila_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, CA=0, output_text_dim=256,
-        prefix = 16, postfix = 16, **kwargs)
-    return model
-
-@register_model
-def compo_cast_Bsquare_CA9_lavila_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=9, output_text_dim=256, 
-        prefix = 16, postfix = 16, **kwargs)
-    return model
-
-@register_model
-def compo_cast_Bsquare_CA0_lavila_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=0, output_text_dim=256,
-        prefix = 16, postfix = 16, **kwargs)
-    return model
-
-
-# audio 16 Spec
-
-@register_model
-def cast_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=False, text_num_heads=12, CA=9, output_text_dim=768,
-        prefix = 16, postfix = 16, attn_all_frame=False, **kwargs)
-    return model
-
-@register_model
-def cast_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=False, text_num_heads=12, CA=0, output_text_dim=768,
-        prefix = 16, postfix = 16, attn_all_frame=False, **kwargs)
-    return model
-
-@register_model
-def compo_cast_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
-        prefix = 16, postfix = 16, attn_all_frame=False, **kwargs)
-    return model
-
-@register_model
-def compo_cast_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=0, output_text_dim=768,
-        prefix = 16, postfix = 16, attn_all_frame=False, **kwargs)
-    return model
-
-
 # audio - single Spec
 
 @register_model
-def cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def cast_single_beats_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=False, text_num_heads=12, CA=9, output_text_dim=768,
@@ -1586,7 +1461,7 @@ def cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, 
     return model
 
 @register_model
-def cast_single_audio_Bsquare_CA9_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def cast_single_beats_Bsquare_CA9_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
@@ -1594,23 +1469,7 @@ def cast_single_audio_Bsquare_CA9_down4_base_patch16_224(pretrained=False, args=
     return model
 
 @register_model
-def cast_stacks_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=False, text_num_heads=12, CA=9, output_text_dim=768,
-        prefix = 16, postfix = 16, spec_frames=16, attn_all_frame=False, **kwargs)
-    return model
-
-@register_model
-def cast_stacks_audio_Bsquare_CA9_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
-        prefix = 16, postfix = 16, spec_frames=16, attn_all_frame=False, down_ratio=4, **kwargs)
-    return model
-
-@register_model
-def cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def cast_single_beats_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=False, text_num_heads=12, CA=9, output_text_dim=768,
@@ -1618,15 +1477,17 @@ def cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, 
     return model
 
 @register_model
-def cast_single_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def cast_single_beats_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=False, text_num_heads=12, CA=0, output_text_dim=768,
         prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, **kwargs)
     return model
 
+# audio - single Spec ek100
+
 @register_model
-def compo_cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_single_beats_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
@@ -1634,7 +1495,7 @@ def compo_cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=
     return model
 
 @register_model
-def compo_cast_single_audio_Bsquare_CA9_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_single_beats_Bsquare_CA9_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
@@ -1642,15 +1503,7 @@ def compo_cast_single_audio_Bsquare_CA9_down4_base_patch16_224(pretrained=False,
     return model
 
 @register_model
-def compo_cast_single_audio_Bsquare_CA0_down4_noAdap_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=0, output_text_dim=768,
-        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, down_ratio=4, use_Adapter=False, **kwargs)
-    return model
-
-@register_model
-def compo_cast_single_audio_Bsquare_ALLCA9_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_single_beats_Bsquare_ALLCA9_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
@@ -1658,15 +1511,7 @@ def compo_cast_single_audio_Bsquare_ALLCA9_down4_base_patch16_224(pretrained=Fal
     return model
 
 @register_model
-def compo_cast_single_audio_Bsquare_CA9_down8_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
-        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, down_ratio=8, **kwargs)
-    return model
-
-@register_model
-def compo_cast_single_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_single_beats_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=0, output_text_dim=768,

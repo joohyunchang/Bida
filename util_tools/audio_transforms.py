@@ -133,12 +133,12 @@ class Spectrogram:
         elif audio_type in ['onespec', 'single1024','single1024s']:
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         else:
-            pass
+            spec = spec.unsqueeze(0).repeat(3, 1, 1)
         return spec
         
-    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test', data_set='EPIC', extract=False):
+    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test', data_set='EPIC', extract=False, device='cpu'):
         samples, sample_rate = torchaudio.load(sample)
-        samples = samples.squeeze(0)
+        samples = samples.squeeze(0).to(device)
         if data_set == 'Kinetics-400':
             left_sec = 0
             right_sec = len(samples) / 60
@@ -203,7 +203,7 @@ class Spectrogram:
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
-        elif audio_type in ['stacks','single','single1024','stackss','single1024s','singles']:
+        elif audio_type in ['stacks','single','single1024','stackss','single1024s','singles'] or 'beats' in audio_type:
             stride = int(length_sample // length)
             if stride > 0:
                 samples = torch.stack([samples[left_sample+(i*length):left_sample+((i+1)*length)] for i in range(stride)],dim=0)
@@ -215,14 +215,16 @@ class Spectrogram:
                 else:
                         samples = samples[right_sample - length:right_sample]
                 samples = samples.unsqueeze(0)
+            stack_dim = samples.shape[0]
+            if not audio_type in ['stacks','stackss']:
+                samples = samples[(stack_dim-1)//2, :]
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
-            spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
-            stack_dim = spec.shape[1]
             if audio_type in ['stacks','stackss']:
+                spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
                 idx = np.round(np.linspace(0, stack_dim - 1, self.num_segment)).astype(int).tolist()
                 spec = spec[:, idx, :, :] if not extract else spec
             else:
-                spec = spec[:, (stack_dim-1)//2, :, :]
+                spec = spec.unsqueeze(0).repeat(3, 1, 1)
         elif audio_type == 'onespec':
             samples = samples[left_sample:right_sample]
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
@@ -233,3 +235,20 @@ class Spectrogram:
             spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
             # spec = spec.unsqueeze(0).unsqueeze(0).expand(3, 16, -1, -1)
         return spec
+    
+def save_spectrogram_npy(audio_name, spec, use_try=False):
+    # torch.tensor를 numpy 배열로 변환
+    spec_np = spec.numpy() if torch.is_tensor(spec) else spec
+
+    # 파일명에서 확장자를 제외하고 .npy 확장자를 추가
+    npy_filename = audio_name.rsplit('.', 1)[0] + '.npy'
+
+    # 스펙트로그램을 .npy 파일로 저장
+    if use_try:
+        try:
+            np.save(npy_filename, spec_np)
+        except:
+            pass
+    else:
+        np.save(npy_filename, spec_np)
+        

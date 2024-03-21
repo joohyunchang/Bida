@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 import util_tools.video_transforms as video_transforms 
 import util_tools.volume_transforms as volume_transforms
 from util_tools.audio_transforms import Spectrogram
+from util_tools.audio_transforms import save_spectrogram_npy
 import torchaudio
 import random
 import torch
@@ -46,10 +47,7 @@ class EpicVideoClsDataset(Dataset):
           if self.audio_path is not None:
                self.audio_type = args.audio_type
                self.realtime_audio = args.realtime_audio
-               # self._spectrogram_init(resampling_rate=24000)
-               # if args.audio_height != 224 or args.audio_width != 224:
-               #      self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=1024)
-               # else:
+               self.autosave_spec = args.autosave_spec
                self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type)
                
           
@@ -125,11 +123,16 @@ class EpicVideoClsDataset(Dataset):
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          try:
                               spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, mode=self.mode)
+                              if not self.realtime_audio and self.autosave_spec:
+                                   try:
+                                        save_spec = spec[0].detach()
+                                        save_spectrogram_npy(audio_trim_path, save_spec)
+                                   except:
+                                        pass
                               if args.spec_augment:
                                    spec = self.spectrogram.spec_augment(spec)
                          except:
                               print("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
-                              spec = torch.random((3, 16, 224, 224))
                else:
                     spec = {}
                
@@ -177,6 +180,12 @@ class EpicVideoClsDataset(Dataset):
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type)
+                         if not self.realtime_audio and self.autosave_spec:
+                              try:
+                                   save_spec = spec[0]
+                                   save_spectrogram_npy(audio_trim_path, save_spec)
+                              except:
+                                   pass
                else:
                     spec = {}
                

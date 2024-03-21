@@ -224,7 +224,7 @@ def get_args():
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
     parser.add_argument('--audio_path', default=None, type=str, help='audio path')
     parser.add_argument('--collate', action='store_true', default=False)
-    parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack','stacks','single','onespec','single1024','stackss','single1024s','singles'],
+    parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack','stacks','single','onespec','single1024','stackss','single1024s','singles','beats_single128','beats_single224','beats_single1024'],
                         type=str, help='audio_trim_type')
     parser.add_argument('--narration', action='store_true', default=False)
     parser.add_argument('--class_narration', action='store_true', default=False)
@@ -232,6 +232,7 @@ def get_args():
     parser.add_argument('--realtime_audio', action='store_true', default=False)
     parser.add_argument('--audio_height', default=224, type=int, help='audio_spec_shape')
     parser.add_argument('--audio_width', default=224, type=int, help='audio_spec_shape')
+    parser.add_argument('--autosave_spec', action='store_true', default=False)
     
     
     

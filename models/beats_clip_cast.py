@@ -376,7 +376,7 @@ class CrossAttentionT2S(nn.Module):
 class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None, 
-                 spec_frames=1, attn_all_frame=True, CA=0, use_Adapter=True, audio_patch=196, 
+                 spec_frames=1, attn_all_frame=True, CA=0, use_Adapter=True, audio_patch=196, use_AIM=False,
                  relative_position_embedding=True, num_buckets=320, max_distance=800, gru_rel_pos=True):
         super().__init__()
         self.num_layer = num_layer
@@ -389,6 +389,8 @@ class Block(nn.Module):
         self.use_Adapter = use_Adapter
         self.audio_patch = audio_patch
         self.spec_frames = spec_frames
+        self.num_frames = num_frames//2
+        self.use_AIM = use_AIM
         
         ###################################### MHSA code #####################################
         ############################ BEATs MHSA ###########################
@@ -410,6 +412,10 @@ class Block(nn.Module):
         self.dropout3 = nn.Dropout(drop)
         self.self_attn_layer_norm = LayerNorm(dim)
         if self.use_Adapter:
+            if self.use_AIM:
+                self.WT_Adapter = Adapter(dim, skip_connect=False)
+                self.HT_Adapter = Adapter(dim, skip_connect=False)
+                self.CLS_Adapter = Adapter(dim)
             self.S_Adapter = Adapter(dim)
         ##################################################################
         
@@ -465,7 +471,7 @@ class Block(nn.Module):
 
     def forward(self, s_x, t_x, pos_bias=None):
         B = s_x.shape[1] // self.spec_frames
-        n, bt, _ = s_x.shape
+        n, bt, _ = t_x.shape
         num_frames = bt//B
         
         ############################ MHSA Forward #############################
@@ -481,6 +487,19 @@ class Block(nn.Module):
         )
         s_x = self.dropout1(s_x)
         if self.use_Adapter:
+            if self.use_AIM:
+                w=int(math.sqrt(n))
+                xt = t_x[1:,:,:]
+                xt = rearrange(xt, '(w h) (b t) d -> (w t) (b h) d', t=self.num_frames, w=w)
+                xwt = self.WT_Adapter(self.attention(self.clip_ln_1(xt)))
+                xt = xt + self.drop_path(xwt) # skip connection original + width time attention result
+                
+                xt = rearrange(xt, '(w t) (b h) d -> (h t) (b w) d', t=self.num_frames, h=w)
+                xht = self.HT_Adapter(self.attention(self.clip_ln_1(xt)))
+                xt = xt + self.drop_path(xht) # skip connection original + width time attention result
+                xt = rearrange(xt, '(h t) (b w) d -> (w h) (b t) d', h=w,w=w)
+                xt = torch.cat((t_x[0,:,:].unsqueeze(0), xt),0)
+                t_x = xt
             # BEATs Space MHSA
             s_x = residual * self.deep_norm_alpha + self.S_Adapter(s_x)
             s_x = self.self_attn_layer_norm(s_x)
@@ -557,6 +576,7 @@ class STCrossTransformer(nn.Module):
                  CA=0,
                  use_Adapter=True,
                  audio_patch=196,
+                 use_AIM=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -618,7 +638,7 @@ class STCrossTransformer(nn.Module):
             Block(
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
-                init_values=init_values, num_layer=i, spec_frames=spec_frames, attn_all_frame=attn_all_frame, CA=CA, use_Adapter=use_Adapter, audio_patch=audio_patch,
+                init_values=init_values, num_layer=i, spec_frames=spec_frames, attn_all_frame=attn_all_frame, CA=CA, use_Adapter=use_Adapter, audio_patch=audio_patch, use_AIM=use_AIM,
                 relative_position_embedding=self.relative_position_embedding, num_buckets=self.num_buckets, max_distance=self.max_distance, gru_rel_pos=gru_rel_pos)
             for i in range(depth)])
         
@@ -793,6 +813,14 @@ def compo_single_beats_clip_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=True, **kwargs)
+    return model
+
+@register_model
+def compo_single_beats_AIM_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
+        CA=0, spec_frames=1, attn_all_frame=True, use_AIM=True, **kwargs)
     return model
 
 @register_model

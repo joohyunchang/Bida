@@ -531,7 +531,8 @@ class Block(nn.Module):
         s_x = self.dropout3(s_x)
         t_xn = self.clip_ln_2(t_x)
         if self.use_Adapter:
-            s_x = residual * self.deep_norm_alpha + self.S_MLP_Adapter(s_x)
+            # s_x = residual * self.deep_norm_alpha + self.S_MLP_Adapter(s_x)
+            s_x = residual * self.deep_norm_alpha + s_x + self.S_MLP_Adapter(residual)
             s_x = self.final_layer_norm(s_x)
             t_x = t_x + self.clip_mlp(t_xn) + self.drop_path(self.scale * self.T_MLP_Adapter(t_xn))
         else:

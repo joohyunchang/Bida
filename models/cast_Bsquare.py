@@ -819,8 +819,10 @@ class CrossAttentionT2S(nn.Module):
 
 class B_CAST(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, down_ratio=2, text_dim=512, text_num_heads=8, 
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, type='s-text', attn_all_frame=True, spec_frames=8, audio_patch=196):
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, type='s-text', 
+                 attn_all_frame=True, spec_frames=8, audio_patch=196, skip_connect=True):
         super().__init__()
+        self.skip_connect = skip_connect
         self.num_frames = num_frames
         self.down_ratio = down_ratio
         self.down_ratio = down_ratio
@@ -866,8 +868,12 @@ class B_CAST(nn.Module):
         n_r = self.ln_r_cross(self.cross_r_down(r))
         c_l = self.cross_l_up(self.act(self.r2l_cross(n_l, n_r)))
         c_r = self.cross_r_up(self.act(self.l2r_cross(n_l, n_r)))
-        l = l + self.drop_path(c_l)
-        r = r + self.drop_path(c_r)
+        if self.skip_connect:
+            l = l + self.drop_path(c_l)
+            r = r + self.drop_path(c_r)
+        else:
+            l = self.drop_path(c_l)
+            r = self.drop_path(c_r)
         return l, r
     
 class Block(nn.Module):
@@ -915,15 +921,21 @@ class Block(nn.Module):
         
         ###################################### Cross attention ####################################
         if not self.CA_eq or self.num_layer in self.CA:
-            self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t')
+            # self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t')
+            self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t', skip_connect=False)
         if self.num_layer in self.CA:
             if audio_enabled:
-                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
-                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
+                # self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
+                # self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
+                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=False)
+                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=False)
             else:
                 self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text', attn_all_frame=attn_all_frame)
                 self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text', attn_all_frame=attn_all_frame)
         
+        # self.s_scale_cross = torch.nn.Parameter(torch.randn(1))
+        # self.t_scale_cross = torch.nn.Parameter(torch.randn(1))
+        # self.text_scale_cross = torch.nn.Parameter(torch.randn(1))
         ###########################################################################################
         
         ###################################### FFN code #########################################
@@ -1001,11 +1013,41 @@ class Block(nn.Module):
         ########################################################################
         
         ############################ Cross Forward #############################
+        # if not self.CA_eq or self.num_layer in self.CA:
+        #     s_x, t_x = self.s_t_b_cast(s_x, t_x)
+        # if self.num_layer in self.CA:
+        #     s_x, text = self.s_text_b_cast(s_x, text)
+        #     t_x, text = self.t_text_b_cast(t_x, text)
+            
+        # if not self.CA_eq or self.num_layer in self.CA:
+        #     s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+        # if self.num_layer in self.CA:
+        #     s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+        #     t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+        # else:
+        #     s_x_ct, text_ct = s_x_cv, text
+        #     t_x_vt, text_vt = t_x_cv, text
+            
+        # s_x = self.s_scale_cross * s_x_cv + (1-self.s_scale_cross)*s_x_ct
+        # t_x = self.t_scale_cross*t_x_cv + (1-self.t_scale_cross)*t_x_vt
+        # text = self.text_scale_cross*text_ct + (1-self.text_scale_cross)*text_vt
+        
         if not self.CA_eq or self.num_layer in self.CA:
-            s_x, t_x = self.s_t_b_cast(s_x, t_x)
+            s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
         if self.num_layer in self.CA:
-            s_x, text = self.s_text_b_cast(s_x, text)
-            t_x, text = self.t_text_b_cast(t_x, text)
+            s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+            t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+        else:
+            s_x_ct, text_ct = 0, 0
+            t_x_vt, text_vt = 0, 0
+            
+        s_x = s_x + s_x_cv + s_x_ct
+        t_x = t_x + t_x_cv + t_x_vt
+        text = text + text_ct + text_vt
+        # s_x = s_x + self.drop_path(self.scale * (s_x_cv + s_x_ct))
+        # t_x = t_x + self.drop_path(self.scale * (t_x_cv + t_x_vt))
+        # if self.num_layer in self.CA:
+        #     text = text + self.drop_path(self.scale * (text_ct + text_vt))
         #########################################################################
         
         ############################ FFN Forward ##################################
@@ -1337,7 +1379,7 @@ class STCrossTransformer(nn.Module):
             
             return s_x, t_x, eot
         else:
-            spec_x = rearrange(spec_x, '(b t) n d -> b t n d', b=B)
+            spec_x = rearrange(text_x, '(b t) n d -> b t n d', b=B)
             spec_x = self.clip_ln_post(spec_x[:,:,0,:].mean(1))
             return s_x, t_x, spec_x
     

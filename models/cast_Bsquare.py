@@ -880,7 +880,7 @@ class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None,
                  text_dim=512, text_num_heads=8, use_Adapter=False, CA=[i for i in range(12)], audio_enabled=False, 
-                 spec_frames=8, attn_all_frame=True, audio_patch=196, CA_eq=False):
+                 spec_frames=8, attn_all_frame=True, audio_patch=196, CA_eq=False, bcast_method='seq'):
         super().__init__()
         self.num_layer = num_layer
         self.CA = CA
@@ -892,7 +892,7 @@ class Block(nn.Module):
         self.act = act_layer()
         self.use_Adapter = use_Adapter
         self.audio_enabled = audio_enabled
-        
+        bcast_method = 'seq' if bcast_method == None else bcast_method
         ###################################### MHSA code #####################################
         ############################ AIM MHSA ###########################
         self.clip_ln_1 = LayerNorm(dim)
@@ -920,22 +920,23 @@ class Block(nn.Module):
         #########################################################################################
         
         ###################################### Cross attention ####################################
+        self.bcast_method = bcast_method
+        assert bcast_method in ['seq','add','add_scale','add_param'] # sequential, parallel add, parallel add scale
+        skip_connect = False if bcast_method in ['add','add_scale','add_param'] else True
         if not self.CA_eq or self.num_layer in self.CA:
-            # self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t')
-            self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t', skip_connect=False)
+            self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t', skip_connect=skip_connect)
         if self.num_layer in self.CA:
             if audio_enabled:
-                # self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
-                # self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch)
-                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=False)
-                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=False)
+                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect)
+                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect)
             else:
-                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text', attn_all_frame=attn_all_frame)
-                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text', attn_all_frame=attn_all_frame)
+                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text', attn_all_frame=attn_all_frame, skip_connect=skip_connect)
+                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text', attn_all_frame=attn_all_frame, skip_connect=skip_connect)
         
-        # self.s_scale_cross = torch.nn.Parameter(torch.randn(1))
-        # self.t_scale_cross = torch.nn.Parameter(torch.randn(1))
-        # self.text_scale_cross = torch.nn.Parameter(torch.randn(1))
+        if bcast_method == 'add_param':
+            self.s_scale_cross = torch.nn.Parameter(torch.randn(1))
+            self.t_scale_cross = torch.nn.Parameter(torch.randn(1))
+            self.text_scale_cross = torch.nn.Parameter(torch.randn(1))
         ###########################################################################################
         
         ###################################### FFN code #########################################
@@ -1013,41 +1014,50 @@ class Block(nn.Module):
         ########################################################################
         
         ############################ Cross Forward #############################
-        # if not self.CA_eq or self.num_layer in self.CA:
-        #     s_x, t_x = self.s_t_b_cast(s_x, t_x)
-        # if self.num_layer in self.CA:
-        #     s_x, text = self.s_text_b_cast(s_x, text)
-        #     t_x, text = self.t_text_b_cast(t_x, text)
+        if self.bcast_method == 'seq':
+            if not self.CA_eq or self.num_layer in self.CA:
+                s_x, t_x = self.s_t_b_cast(s_x, t_x)
+            if self.num_layer in self.CA:
+                s_x, text = self.s_text_b_cast(s_x, text)
+                t_x, text = self.t_text_b_cast(t_x, text)
+        elif self.bcast_method == 'add_param':
+            if not self.CA_eq or self.num_layer in self.CA:
+                s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+            if self.num_layer in self.CA:
+                s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+                t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+            else:
+                s_x_ct, text_ct = s_x_cv, text
+                t_x_vt, text_vt = t_x_cv, text
+            s_x = self.s_scale_cross * s_x_cv + (1-self.s_scale_cross)*s_x_ct
+            t_x = self.t_scale_cross*t_x_cv + (1-self.t_scale_cross)*t_x_vt
+            text = self.text_scale_cross*text_ct + (1-self.text_scale_cross)*text_vt
+        elif self.bcast_method == 'add':
+            if not self.CA_eq or self.num_layer in self.CA:
+                s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+            if self.num_layer in self.CA:
+                s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+                t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+            else:
+                s_x_ct, text_ct = 0, 0
+                t_x_vt, text_vt = 0, 0
+            s_x = s_x + s_x_cv + s_x_ct
+            t_x = t_x + t_x_cv + t_x_vt
+            text = text + text_ct + text_vt
+        elif self.bcast_method == 'add_scale':
+            if not self.CA_eq or self.num_layer in self.CA:
+                s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+            if self.num_layer in self.CA:
+                s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+                t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+            else:
+                s_x_ct, text_ct = 0, 0
+                t_x_vt, text_vt = 0, 0
+            s_x = s_x + self.drop_path(self.scale * (s_x_cv + s_x_ct))
+            t_x = t_x + self.drop_path(self.scale * (t_x_cv + t_x_vt))
+            if self.num_layer in self.CA:
+                text = text + self.drop_path(self.scale * (text_ct + text_vt))
             
-        # if not self.CA_eq or self.num_layer in self.CA:
-        #     s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
-        # if self.num_layer in self.CA:
-        #     s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
-        #     t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
-        # else:
-        #     s_x_ct, text_ct = s_x_cv, text
-        #     t_x_vt, text_vt = t_x_cv, text
-            
-        # s_x = self.s_scale_cross * s_x_cv + (1-self.s_scale_cross)*s_x_ct
-        # t_x = self.t_scale_cross*t_x_cv + (1-self.t_scale_cross)*t_x_vt
-        # text = self.text_scale_cross*text_ct + (1-self.text_scale_cross)*text_vt
-        
-        if not self.CA_eq or self.num_layer in self.CA:
-            s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
-        if self.num_layer in self.CA:
-            s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
-            t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
-        else:
-            s_x_ct, text_ct = 0, 0
-            t_x_vt, text_vt = 0, 0
-            
-        s_x = s_x + s_x_cv + s_x_ct
-        t_x = t_x + t_x_cv + t_x_vt
-        text = text + text_ct + text_vt
-        # s_x = s_x + self.drop_path(self.scale * (s_x_cv + s_x_ct))
-        # t_x = t_x + self.drop_path(self.scale * (t_x_cv + t_x_vt))
-        # if self.num_layer in self.CA:
-        #     text = text + self.drop_path(self.scale * (text_ct + text_vt))
         #########################################################################
         
         ############################ FFN Forward ##################################
@@ -1143,6 +1153,7 @@ class STCrossTransformer(nn.Module):
                  audio_patch=196,
                  CA_eq=False,
                  use_Adapter=True,
+                 bcast_method='seq',
                  use_textF = True):
         super().__init__()
         self.num_classes = num_classes
@@ -1213,7 +1224,7 @@ class STCrossTransformer(nn.Module):
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
                 init_values=init_values, num_layer=i, text_dim=self.text_dim, text_num_heads=text_num_heads, use_Adapter=use_Adapter, CA=CA, audio_enabled=self.audio_enabled,
-                spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, CA_eq=CA_eq)
+                spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, CA_eq=CA_eq, bcast_method=bcast_method)
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)

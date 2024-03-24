@@ -233,6 +233,8 @@ def get_args():
     parser.add_argument('--audio_height', default=224, type=int, help='audio_spec_shape')
     parser.add_argument('--audio_width', default=224, type=int, help='audio_spec_shape')
     parser.add_argument('--autosave_spec', action='store_true', default=False)
+    parser.add_argument('--bcast_method', default=None, choices=['seq','add','add_scale','add_param'], # sequential, parallel add, parallel add scale
+                        type=str, help='bcast_method')
     
     
     
@@ -371,40 +373,27 @@ def main(args, ds_init):
         class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
     else:
         class_list = None
-    if args.audio_path is None:
-        model = create_model(
-            args.vmae_model,
-            pretrained=False,
-            num_classes=args.nb_classes,
-            all_frames=args.num_frames * args.num_segments,
-            tubelet_size=args.tubelet_size,
-            drop_rate=args.drop,
-            drop_path_rate=args.drop_path,
-            attn_drop_rate=args.attn_drop_rate,
-            drop_block_rate=None,
-            use_mean_pooling=args.use_mean_pooling,
-            init_scale=args.init_scale,
-            fusion_method=args.fusion_method,
-            #   head_drop_rate=args.head_drop
-        )
-    else:
+    model_args = {
+            'model_name': args.vmae_model,
+            'pretrained': False,
+            'num_classes': args.nb_classes,
+            'all_frames': args.num_frames * args.num_segments,
+            'tubelet_size': args.tubelet_size,
+            'drop_rate': args.drop,
+            'drop_path_rate': args.drop_path,
+            'attn_drop_rate': args.attn_drop_rate,
+            'drop_block_rate': None,
+            'use_mean_pooling': args.use_mean_pooling,
+            'init_scale': args.init_scale,
+            'fusion_method': args.fusion_method
+        }
+    if args.audio_path is not None:
         print(f"Audio_Patch size = {args.audio_height*args.audio_width//(args.window_size*args.window_size)}")
-        model = create_model(
-            args.vmae_model,
-            pretrained=False,
-            num_classes=args.nb_classes,
-            all_frames=args.num_frames * args.num_segments,
-            tubelet_size=args.tubelet_size,
-            drop_rate=args.drop,
-            drop_path_rate=args.drop_path,
-            attn_drop_rate=args.attn_drop_rate,
-            drop_block_rate=None,
-            use_mean_pooling=args.use_mean_pooling,
-            init_scale=args.init_scale,
-            fusion_method=args.fusion_method,
-            audio_patch=args.audio_height*args.audio_width//(args.window_size*args.window_size)
-            #   head_drop_rate=args.head_drop
-        )
+        model_args['audio_patch'] = args.audio_height*args.audio_width//(args.window_size*args.window_size)
+    if args.bcast_method is not None:
+        print(f"bcast_method = {args.bcast_method}")
+        model_args['bcast_method'] = args.bcast_method
+    model = create_model(**model_args)
     
     if args.fine_tune is not None:
         laod_eval_weights(model, args.fine_tune, args)

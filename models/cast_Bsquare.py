@@ -1663,20 +1663,15 @@ def cast_stacks_audio_Bsquare_CA9_down4_base_patch16_224(pretrained=False, args=
     return model
 
 @register_model
-def cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    model = STCrossTransformer(
-        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=False, text_num_heads=12, CA=9, output_text_dim=768,
-        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, **kwargs)
-    return model
-
-@register_model
 def cast_single_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=False, text_num_heads=12, CA=0, output_text_dim=768,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=False, text_num_heads=12, CA=0, output_text_dim=768,
         prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, **kwargs)
     return model
+
+
+# composition
 
 @register_model
 def compo_cast_single_audio_Bsquare_CA9_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):

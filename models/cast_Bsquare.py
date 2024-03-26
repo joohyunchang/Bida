@@ -1690,11 +1690,11 @@ def compo_cast_single_audio_Bsquare_CA9_down4_base_patch16_224(pretrained=False,
     return model
 
 @register_model
-def compo_cast_single_audio_Bsquare_CA0_down4_noAdap_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+def compo_cast_single_audio_Bsquare_CA0_down4_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=0, output_text_dim=768,
-        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, down_ratio=4, use_Adapter=False, **kwargs)
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, down_ratio=4, use_Adapter=True, **kwargs)
     return model
 
 @register_model
@@ -1703,6 +1703,22 @@ def compo_cast_single_audio_Bsquare_ALLCA9_base_patch16_224(pretrained=False, ar
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=9, output_text_dim=768,
         prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, down_ratio=2, CA_eq=True, **kwargs)
+    return model
+
+@register_model
+def compo_cast_single_audio_Bsquare_ALLCA11_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=11, output_text_dim=768,
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, down_ratio=2, CA_eq=True, **kwargs)
+    return model
+
+@register_model
+def compo_cast_single_audio_Bsquare_CA11_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=11, output_text_dim=768,
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, down_ratio=2, CA_eq=False, **kwargs)
     return model
 
 @register_model

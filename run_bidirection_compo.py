@@ -780,7 +780,7 @@ def main(args, ds_init):
                             row[1].fill = red_fill
                             row[3].fill = red_fill
                     wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
-            acc_str+=f"Epoch {current_epoch} Top 1 Accuracy is {final_top1_action:05.2f}, {final_top1_noun:05.2f}, {final_top1_verb:05.2f}" if args.composition else f"Epoch {current_epoch} Top 1 Accuracy is {final_top1:05.2f}\n"
+            acc_str+=f"Epoch {current_epoch} Top 1 Accuracy is {final_top1_action:05.2f}, {final_top1_noun:05.2f}, {final_top1_verb:05.2f}\n" if args.composition else f"Epoch {current_epoch} Top 1 Accuracy is {final_top1:05.2f}\n"
     
     
 

@@ -897,6 +897,39 @@ def test_audio_collate_fn(batch):
     
     return inputs, labels, video_idx, chunk_nb, split_nb, audios, caption
 
+def audio_list_collate_fn(batch):
+    """
+    Collate function for audio data.
+    Args:
+        batch (tuple or list): data batch to collate.
+    Returns:
+        (tuple): collated data batch.
+    """
+    inputs, labels, video_idx, audios, caption = zip(*batch)
+    inputs, labels, video_idx, audios, caption = list(inputs), list(labels), list(video_idx), list(audios), list(caption)
+    caption = None if all(cap is None for cap in caption) else caption
+    inputs, labels, video_idx = (
+        default_collate(inputs),
+        default_collate(labels),
+        default_collate(video_idx),
+    )
+    
+    return inputs, labels, video_idx, audios, caption
+
+def test_audio_list_collate_fn(batch):
+    inputs, labels, video_idx, chunk_nb, split_nb, audios, caption = zip(*batch)
+    inputs, labels, video_idx, chunk_nb, split_nb, audios, caption = list(inputs), list(labels), list(video_idx), list(chunk_nb), list(split_nb), list(audios), list(caption)
+    caption = None if all(cap is None for cap in caption) else caption
+    inputs, labels, video_idx, chunk_nb, split_nb = (
+        default_collate(inputs),
+        default_collate(labels),
+        default_collate(video_idx),
+        default_collate(chunk_nb),
+        default_collate(split_nb),
+    )
+    
+    return inputs, labels, video_idx, chunk_nb, split_nb, audios, caption
+
 def multiple_samples_collate(batch, fold=False):
     """
     Collate function for repeated augmentation. Each instance in the batch has

@@ -73,7 +73,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         targets = targets.to(device, non_blocking=True)
         if args.audio_path is not None:
             if args.collate:
-                spec = torch.stack(spec, dim=0).to(device, non_blocking=True).half()
+                spec = [spe.to(device, non_blocking=True).half() for spe in spec]
             else:
                 spec = spec.to(device, non_blocking=True).half()
         else:
@@ -204,7 +204,7 @@ def validation_one_epoch(args, data_loader, model, device):
         if args.audio_path is not None:
             # spec = [spe.to(device, non_blocking=True) for spe in batch[3]]
             if args.collate:
-                spec = torch.stack(batch[3], dim=0).to(device, non_blocking=True)
+                spec = [spe.to(device, non_blocking=True).half() for spe in batch[3]]
             else:
                 spec = batch[3].to(device, non_blocking=True)
         else:
@@ -265,7 +265,7 @@ def final_test(args, data_loader, model, device, file):
         if args.audio_path is not None:
             # spec = [spe.to(device, non_blocking=True) for spe in batch[5]]
             if args.collate:
-                spec = torch.stack(batch[5], dim=0).to(device, non_blocking=True)
+                spec = [spe.to(device, non_blocking=True).half() for spe in batch[5]]
             else:
                 spec = batch[5].to(device, non_blocking=True)
         else:

@@ -576,6 +576,7 @@ class STCrossTransformer(nn.Module):
         spec_frames = (spec_frames+1) //2
         attn_all_frame=attn_all_frame
         CA=CA
+        # CA=12
         ###################################
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -678,6 +679,7 @@ class STCrossTransformer(nn.Module):
         
         ######################## CLIP spatial path #########################
         t_x = x[:, :, 1::2, :, :]
+        # t_x = x.unsqueeze(2)
         t_t = t_x.shape[2]
         t_x = rearrange(t_x, 'b c t h w -> (b t) c h w')
         t_x = self.clip_conv1(t_x) # shape = [*, embeddim, grid, grid]

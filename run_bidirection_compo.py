@@ -20,7 +20,7 @@ from util_tools.optim_factory import create_optimizer, get_parameter_groups, Lay
 
 from dataset.datasets import build_dataset
 from util_tools.utils import NativeScalerWithGradNormCount as NativeScaler, load_bidir_weights, unfreeze_block
-from util_tools.utils import multiple_samples_collate, notice_message, laod_eval_weights, audio_collate_fn, test_audio_collate_fn
+from util_tools.utils import multiple_samples_collate, notice_message, laod_eval_weights, audio_collate_fn, test_audio_collate_fn, audio_list_collate_fn, test_audio_list_collate_fn
 import util_tools.utils as utils
 import models.bidir_modeling_after_crossattn
 import models.bidir_modeling_crossattn
@@ -224,7 +224,7 @@ def get_args():
     parser.add_argument('--prompt_weight',default=None, help='prompt from prompt_cast checkpoint')
     parser.add_argument('--audio_path', default=None, type=str, help='audio path')
     parser.add_argument('--collate', action='store_true', default=False)
-    parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack','stacks','single','onespec','single1024','stackss','single1024s','singles','beats_single128','beats_single224','beats_single1024'],
+    parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack','stacks','single','onespec','single1024','stackss','single1024s','singles','beats_single128','beats_single224','beats_single1024','beats_free','free'],
                         type=str, help='audio_trim_type')
     parser.add_argument('--narration', action='store_true', default=False)
     parser.add_argument('--class_narration', action='store_true', default=False)
@@ -316,7 +316,9 @@ def main(args, ds_init):
     #     collate_func = partial(multiple_samples_collate, fold=False)
     # else:
     #     collate_func = None
-    if args.audio_path is not None or args.narration is not None or args.class_narration is not None:
+    if args.collate:
+        train_collate, val_collate, test_collate = audio_list_collate_fn, audio_list_collate_fn, test_audio_list_collate_fn
+    elif args.audio_path is not None or args.narration is not None or args.class_narration is not None:
         train_collate, val_collate, test_collate = audio_collate_fn, audio_collate_fn, test_audio_collate_fn
     else:
         train_collate, val_collate, test_collate = None, None, None
@@ -797,8 +799,7 @@ def main(args, ds_init):
             'color' : '#ff0000',
             'author_name' : 'Job Finish',
             'title' : args.vmae_model,
-            'dir' : args.output_dir, 
-            'text' : cluster,
+            'text' : args.output_dir + '\n' + cluster,
             }
             attach_list=[attach_dict] 
             contents=f"Job_name:{job_name}\nTraining time is {job_time}, B:{args.batch_size}, P:{n_parameters}\n" if args.composition else f"Job_name:{job_name}\nTraining time is {job_time}, B:{args.batch_size}, P:{n_parameters}\n"

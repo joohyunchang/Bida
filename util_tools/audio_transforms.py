@@ -11,6 +11,7 @@ class Spectrogram:
         self.num_segment = num_segment
         self.length = length
         self.process_type = process_type
+        self.free_length = True if length == 0 else False
 
         # torchaudio를 사용한 스펙트로그램 계산
         # self.spectrogram = torch.nn.Sequential(
@@ -65,12 +66,14 @@ class Spectrogram:
                 fbanks.append(fbank)
             fbank = torch.stack(fbanks, dim=0)
             spec = (fbank - fbank_mean) / (2 * fbank_std)
+            self.length = (spec.shape[-2] // 16) * 16 if self.free_length else self.length 
             if spec.shape[-2] != self.length:
                 expand = self.length - spec.shape[-2]
                 spec = spec[:,:self.length,:] if spec.shape[-2] > self.length else  torch.nn.functional.pad(spec, pad=(0, 0, 0, expand))
             spec = spec.squeeze(0) if dim == 1 else spec
         else:
             spec = self.spectrogram(audio)
+            self.length = (spec.shape[-1] // 16) * 16 if self.free_length else self.length 
             if spec.shape[-1] != self.length:
                 expand = self.length - spec.shape[-1]
                 if spec.dim() == 3:
@@ -136,10 +139,10 @@ class Spectrogram:
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         return spec
         
-    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', mode='test', data_set='EPIC', extract=False, device='cpu'):
+    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', audio_centra=1/2, mode=None, data_set='EPIC', extract=False, device='cpu', use_all_wav=False):
         samples, sample_rate = torchaudio.load(sample)
         samples = samples.squeeze(0).to(device)
-        if data_set == 'Kinetics-400':
+        if data_set in ['Kinetics-400','EPIC_split'] or use_all_wav:
             left_sec = 0
             right_sec = len(samples) / 60
             left_sample = 0
@@ -203,7 +206,8 @@ class Spectrogram:
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
-        elif audio_type in ['stacks','single','single1024','stackss','single1024s','singles'] or 'beats' in audio_type:
+        # elif audio_type in ['stacks','single','single1024','stackss','single1024s','singles'] or ('beats' in audio_type and audio_type != 'beats_free'):
+        elif audio_type in ['stacks','stackss']:
             stride = int(length_sample // length)
             if stride > 0:
                 samples = torch.stack([samples[left_sample+(i*length):left_sample+((i+1)*length)] for i in range(stride)],dim=0)
@@ -225,6 +229,19 @@ class Spectrogram:
                 spec = spec[:, idx, :, :] if not extract else spec
             else:
                 spec = spec.unsqueeze(0).repeat(3, 1, 1)
+        elif audio_type in ['single','single1024','single1024s','singles'] or ('beats' in audio_type and audio_type != 'beats_free'):
+            samples = samples[left_sample:right_sample]
+            centra = int(round(samples.shape[-1] * audio_centra))
+            trim_left = centra - length//2
+            trim_right = centra + (length -length//2)
+            if trim_left < 0:
+                samples = samples[:length]
+            elif trim_right > samples.shape[-1]:
+                samples = samples[-length:]
+            else:
+                samples = samples[trim_left:trim_right]
+            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            spec = spec.unsqueeze(0).repeat(3, 1, 1)
         elif audio_type == 'onespec':
             samples = samples[left_sample:right_sample]
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
@@ -232,7 +249,8 @@ class Spectrogram:
         else:
             samples = samples[left_sample:right_sample]
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
-            spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
+            # spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
+            spec = spec.unsqueeze(0).repeat(3, 1, 1)
             # spec = spec.unsqueeze(0).unsqueeze(0).expand(3, 16, -1, -1)
         return spec
     

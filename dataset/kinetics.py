@@ -114,7 +114,7 @@ class VideoClsDataset(Dataset):
                     audio_id = self.dataset_samples[index]
                     audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                     try:
-                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
+                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=random.random(), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
                         if args.spec_augment:
                             spec = self.spectrogram.spec_augment(spec)
                     except:
@@ -194,6 +194,7 @@ class VideoClsDataset(Dataset):
         elif self.mode == 'test':
             # caption = random.choice(self.narration_array[self.test_dataset[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
             caption = random.choice(self.narration_array[self.test_dataset[index]]) if self.narration_array is not None else None
+            chunk_nb, split_nb = self.test_seg[index]
             if self.audio_path is not None:
                 audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.test_dataset[index] + '.npy')
                 audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
@@ -203,7 +204,7 @@ class VideoClsDataset(Dataset):
                     audio_id = self.test_dataset[index]
                     audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                     try:
-                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
+                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(2*chunk_nb+1)/(self.test_num_segment * 2), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
                     except:
                         print("audio {} not correctly loaded during training, {}".format(audio_sample, self.test_dataset[index]), force=True)
                         warnings.warn("Warning, audio {} not correctly loaded during training, {}".format(audio_sample, self.test_dataset[index]))

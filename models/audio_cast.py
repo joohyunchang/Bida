@@ -537,6 +537,7 @@ class STCrossTransformer(nn.Module):
         spec_frames = (spec_frames+1) //2
         attn_all_frame=attn_all_frame
         CA=CA
+        # CA=12
         ###################################
 
         if use_learnable_pos_emb:

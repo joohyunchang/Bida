@@ -5,7 +5,7 @@ import random
 import torchaudio.compliance.kaldi as ta_kaldi
 
 class Spectrogram:
-    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast'):
+    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast', weight=1):
         nperseg = int(round(window_size * resampling_rate / 1e3))
         noverlap = int(round(step_size * resampling_rate / 1e3))
         self.num_segment = num_segment
@@ -24,13 +24,13 @@ class Spectrogram:
         #      torchaudio.transforms.AmplitudeToDB()
         # )
         if process_type == 'beats':
-            self.sec = length * 0.0102
+            self.sec = length * 0.0102 * weight
             self.n_mels = n_mels
             self.length = length
             pass
         else:
             self.length = length
-            self.sec = length * 0.004995535714
+            self.sec = length * 0.004995535714 * weight
             self.spectrogram = torch.nn.Sequential(
                     torchaudio.transforms.MelSpectrogram(
                         sample_rate=resampling_rate,
@@ -59,10 +59,10 @@ class Spectrogram:
             audio = audio.unsqueeze(0) if audio.dim() == 1 else audio
             for waveform in audio:
                 waveform = waveform.unsqueeze(0) * 2 ** 15
-                if self.n_mels <= 128:
-                    fbank = ta_kaldi.fbank(waveform, num_mel_bins=self.n_mels, sample_frequency=24000, frame_length=25, frame_shift=10)
+                if self.n_mels < 128:
+                    fbank = ta_kaldi.fbank(waveform, num_mel_bins=self.n_mels, sample_frequency=resampling_rate, frame_length=25, frame_shift=10)
                 else:
-                    fbank = ta_kaldi.fbank(waveform, num_mel_bins=self.n_mels, sample_frequency=24000, frame_length=50, frame_shift=10)
+                    fbank = ta_kaldi.fbank(waveform, num_mel_bins=self.n_mels, sample_frequency=resampling_rate, frame_length=50, frame_shift=10)
                 fbanks.append(fbank)
             fbank = torch.stack(fbanks, dim=0)
             spec = (fbank - fbank_mean) / (2 * fbank_std)

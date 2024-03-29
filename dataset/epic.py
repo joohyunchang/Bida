@@ -110,7 +110,7 @@ class EpicVideoClsDataset(Dataset):
                caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
                
                if self.audio_path is not None:
-                    audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                    audio_trim_path = os.path.join(self.audio_path,'../spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
                     audio_trim_path = audio_trim_path.replace("singles", "stackss") if self.audio_type == 'singles' else audio_trim_path
                     if not os.path.exists(os.path.join(self.audio_path,'spec', self.audio_type)):
@@ -122,7 +122,7 @@ class EpicVideoClsDataset(Dataset):
                     else:
                          # audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
                          # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
-                         audio_sample = os.path.join(self.audio_path, 'wav_split', self.dataset_samples[index] + '.wav')
+                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + '.wav')
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          try:
@@ -174,7 +174,7 @@ class EpicVideoClsDataset(Dataset):
                caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
                
                if self.audio_path is not None:
-                    audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.dataset_samples[index] + '.npy')
+                    audio_trim_path = os.path.join(self.audio_path,'../spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
                     audio_trim_path = audio_trim_path.replace("singles", "stackss") if self.audio_type == 'singles' else audio_trim_path
                     if os.path.exists(audio_trim_path) and not self.realtime_audio:
@@ -182,7 +182,7 @@ class EpicVideoClsDataset(Dataset):
                     else:
                          # audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
                          # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
-                         audio_sample = os.path.join(self.audio_path, 'wav_split', self.dataset_samples[index] + '.wav')
+                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + '.wav')
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, data_set=self.data_set)
@@ -215,7 +215,7 @@ class EpicVideoClsDataset(Dataset):
                caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
                chunk_nb, split_nb = self.test_seg[index]
                if self.audio_path is not None:
-                    audio_trim_path = os.path.join(self.audio_path,'spec', self.audio_type, self.test_dataset[index] + '.npy')
+                    audio_trim_path = os.path.join(self.audio_path,'../spec', self.audio_type, self.test_dataset[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
                     audio_trim_path = audio_trim_path.replace("singles", "stackss") if self.audio_type == 'singles' else audio_trim_path
                     if os.path.exists(audio_trim_path) and not self.realtime_audio:
@@ -223,10 +223,11 @@ class EpicVideoClsDataset(Dataset):
                     else:
                          # audio_id = '_'.join(self.test_dataset[index].split('_')[:-1])
                          # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
-                         audio_sample = os.path.join(self.audio_path, 'wav_split', self.test_dataset[index] + '.wav')
+                         audio_sample = os.path.join(self.audio_path, self.test_dataset[index] + '.wav')
                          start_frame = self.audio_samples[self.test_dataset[index]]['start_frame']
                          end_frame = self.audio_samples[self.test_dataset[index]]['stop_frame']
-                         spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=(2*chunk_nb+1)/(self.test_num_segment * 2), audio_type=self.audio_type, data_set=self.data_set)
+                         # (2*chunk_nb+1)/(self.test_num_segment * 2)
+                         spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set)
                else:
                     spec = {}
                

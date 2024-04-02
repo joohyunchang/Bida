@@ -553,6 +553,7 @@ class STCrossTransformer(nn.Module):
                  use_Adapter=True,
                  audio_patch=196,
                  use_AIM=False,
+                 audio_only=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -573,6 +574,10 @@ class STCrossTransformer(nn.Module):
         self.clip_ln_pre = LayerNorm(embed_dim)
 
         ###################################
+        self.audio_only = audio_only
+        if audio_only:
+            self.num_frames = 2
+            all_frames = 2
         spec_frames = (spec_frames+1) //2
         attn_all_frame=attn_all_frame
         CA=CA
@@ -678,7 +683,10 @@ class STCrossTransformer(nn.Module):
         #####################################################################
         
         ######################## CLIP spatial path #########################
-        t_x = x[:, :, 1::2, :, :]
+        if not self.audio_only:
+            t_x = x[:, :, 1::2, :, :]
+        else:
+            t_x = spec[:, :, 1::2, :, :] if spec.dim() == 5 else spec.unsqueeze(2)
         # t_x = x.unsqueeze(2)
         t_t = t_x.shape[2]
         t_x = rearrange(t_x, 'b c t h w -> (b t) c h w')
@@ -706,7 +714,16 @@ class STCrossTransformer(nn.Module):
 
     def forward(self, x, caption=None, spec=None):
         if self.composition:
-            if self.audio_enabled:
+            if self.audio_only:
+                s_x, t_x = self.forward_features(spec, spec)
+                x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+                # x = self.verb_last_Adapter(t_x)
+                s_x = self.head_noun_dropout(x)
+                s_x = self.head_noun(s_x)
+                t_x = self.head_verb_dropout(x)
+                t_x = self.head_verb(t_x)
+                return s_x, t_x
+            elif self.audio_enabled:
                 s_x, t_x = self.forward_features(x, spec)
                 x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
                 # x = self.verb_last_Adapter(t_x)
@@ -786,6 +803,14 @@ def compo_single_audio_AIM_vit_base_patch16_224(pretrained=False, **kwargs):
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
         CA=0, spec_frames=1, attn_all_frame=True, use_AIM=True, **kwargs)
+    return model
+
+@register_model
+def compo_single_audio_only_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
+        CA=0, spec_frames=1, attn_all_frame=True, audio_only=True, **kwargs)
     return model
 
 @register_model

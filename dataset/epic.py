@@ -49,7 +49,7 @@ class EpicVideoClsDataset(Dataset):
                self.data_set = 'EPIC_split'
                self.realtime_audio = args.realtime_audio
                self.autosave_spec = args.autosave_spec
-               self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type)
+               self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm)
                
           
           import pandas as pd

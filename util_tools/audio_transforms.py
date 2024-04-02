@@ -3,15 +3,18 @@ import torchaudio
 import numpy as np
 import random
 import torchaudio.compliance.kaldi as ta_kaldi
+import noisereduce as nr
 
 class Spectrogram:
-    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast', weight=1):
+    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast', weight=1, noisereduce=False, specnorm=False):
         nperseg = int(round(window_size * resampling_rate / 1e3))
         noverlap = int(round(step_size * resampling_rate / 1e3))
         self.num_segment = num_segment
         self.length = length
         self.process_type = process_type
         self.free_length = True if length == 0 else False
+        self.noisereduce = noisereduce
+        self.specnorm = specnorm
 
         # torchaudio를 사용한 스펙트로그램 계산
         # self.spectrogram = torch.nn.Sequential(
@@ -74,6 +77,9 @@ class Spectrogram:
         else:
             spec = self.spectrogram(audio)
             self.length = (spec.shape[-1] // 16) * 16 if self.free_length else self.length 
+            if self.specnorm:
+                spec = (spec - (-23)) / (2 * 13.5)  # EK100
+                # spec = (spec - (-20.5)) / (2 * 26.5) # K400
             if spec.shape[-1] != self.length:
                 expand = self.length - spec.shape[-1]
                 if spec.dim() == 3:
@@ -140,8 +146,19 @@ class Spectrogram:
         return spec
         
     def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', audio_centra=1/2, mode=None, data_set='EPIC', extract=False, device='cpu', use_all_wav=False):
-        samples, sample_rate = torchaudio.load(sample)
-        samples = samples.squeeze(0).to(device)
+        if isinstance(sample, str):
+            samples, sample_rate = torchaudio.load(sample)
+        else:
+            if isinstance(sample, np.ndarray):
+                sample = torch.tensor(sample)
+            samples, sample_rate = sample, resampling_rate
+            if samples.dim == 1:
+                samples = samples.unsqueeze(0)
+        if self.noisereduce:
+            reduced_noise = nr.reduce_noise(y=samples.numpy()[0], sr=sample_rate)
+            samples = torch.tensor(reduced_noise).to(device)
+        else:
+            samples = samples.squeeze(0).to(device)
         if data_set in ['Kinetics-400','EPIC_split'] or use_all_wav:
             left_sec = 0
             right_sec = len(samples) / 60

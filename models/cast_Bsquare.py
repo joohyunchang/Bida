@@ -953,8 +953,8 @@ class Block(nn.Module):
         
         ###################################### Cross attention ####################################
         self.bcast_method = bcast_method
-        assert bcast_method in ['seq','add','add_scale','add_param'] # sequential, parallel add, parallel add scale
-        skip_connect = False if bcast_method in ['add','add_scale'] else True
+        assert bcast_method in ['seq','add','add_scale','add_param','msa_add'] # sequential, parallel add, parallel add scale
+        skip_connect = False if bcast_method in ['add','add_scale','msa_add'] else True
         if not self.CA_eq or self.num_layer in self.CA:
             self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t', skip_connect=skip_connect)
         if self.num_layer in self.CA:
@@ -1020,6 +1020,54 @@ class Block(nn.Module):
         B = t_x.shape[0]
         n, bt, _ = s_x.shape
         num_frames = bt//B
+        
+        if self.bcast_method == 'msa_add':
+            s_x_a = self.attention(self.clip_ln_1(s_x))
+            t_x_a = self.attn(self.norm1(t_x))
+            text_a = self.attention(self.clip_ln_1(text)) if self.audio_enabled else self.text_attention(self.clip_text_ln_1(text))
+            if not self.CA_eq or self.num_layer in self.CA:
+                s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+            if self.num_layer in self.CA:
+                s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+                t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+            else:
+                s_x_ct, text_ct = 0, 0
+                t_x_vt, text_vt = 0, 0
+            if self.use_Adapter:
+                s_x = s_x + self.S_Adapter(s_x_a) + s_x_cv + s_x_ct
+                t_x = t_x + self.T_Adapter(t_x_a) + t_x_cv + t_x_vt
+                text = text + self.Text_Adapter(text_a) + text_ct + text_vt
+                # s_x = s_x + self.S_Adapter(s_x_a + s_x_cv + s_x_ct)
+                # t_x = t_x + self.T_Adapter(t_x_a + t_x_cv + t_x_vt)
+                # text = text + self.Text_Adapter(text_a + text_ct + text_vt)
+            else:
+                s_x = s_x + s_x_a + s_x_cv + s_x_ct
+                t_x = t_x + t_x_a + t_x_cv + t_x_vt
+                text = text + text_a + text_ct + text_vt
+            
+            s_xn = self.clip_ln_2(s_x)
+            t_xn = self.norm2(t_x)
+            if self.use_Adapter:
+                s_x = s_x + self.clip_mlp(s_xn) + self.drop_path(self.scale * self.S_MLP_Adapter(s_xn))
+                t_x = t_x + self.mlp(t_xn) + self.drop_path(self.scale * self.T_MLP_Adapter(t_xn))
+            else:
+                s_x = s_x + self.clip_mlp(s_xn)
+                t_x = t_x + self.mlp(t_xn)
+            
+            if self.audio_enabled:
+                text_xn = self.clip_ln_2(text)
+                if self.use_Adapter:
+                    text = text + self.clip_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+                else:
+                    text = text + self.clip_mlp(text_xn)
+            else:
+                text_xn = self.clip_text_ln_2(text)
+                if self.use_Adapter:
+                    text = text + self.clip_text_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+                else:
+                    text = text + self.clip_text_mlp(text_xn)
+            return s_x, t_x, text
+            
         
         ############################ MHSA Forward #############################
         if self.use_Adapter:

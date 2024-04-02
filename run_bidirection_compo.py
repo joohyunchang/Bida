@@ -233,7 +233,9 @@ def get_args():
     parser.add_argument('--audio_height', default=224, type=int, help='audio_spec_shape')
     parser.add_argument('--audio_width', default=224, type=int, help='audio_spec_shape')
     parser.add_argument('--autosave_spec', action='store_true', default=False)
-    parser.add_argument('--bcast_method', default=None, choices=['seq','add','add_scale','add_param'], # sequential, parallel add, parallel add scale
+    parser.add_argument('--noisereduce', action='store_true', default=False)
+    parser.add_argument('--specnorm', action='store_true', default=False)
+    parser.add_argument('--bcast_method', default=None, choices=['seq','add','add_scale','add_param','msa_add'], # sequential, parallel add, parallel add scale
                         type=str, help='bcast_method')
     
     
@@ -498,6 +500,7 @@ def main(args, ds_init):
     print("criterion = %s" % str(criterion))
     print('number of params:', n_parameters)
     print(f"Audio_Patch size = {args.audio_height*args.audio_width//(args.window_size*args.window_size)}")
+    print("NoiseReduce On") if args.noisereduce else print("NoiseReduce Off")
     
     utils.auto_load_model(
         args=args, model=model, model_without_ddp=model_without_ddp,

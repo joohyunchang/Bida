@@ -146,6 +146,39 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         
         return [actionlist, actiondict, actiontoken]
     
+    elif dataset == 'Kinetics_sound':
+        actionlist = ['bowling', 'ripping paper', 'playing xylophone', 'playing organ', 'playing bass guitar',
+                        'tapping guitar',
+                        'playing accordion', 'playing guitar', 'dribbling basketball', 'playing piano', 'playing bagpipes',
+                        'playing saxophone', 'playing harmonica', 'tickling', 'blowing nose', 'tapping pen', 'chopping wood',
+                        'blowing out candles', 'tap dancing', 'stomping grapes', 'playing clarinet', 'laughing',
+                        'playing trombone', 'shoveling snow', 'playing trumpet', 'playing violin', 'singing', 'shuffling cards',
+                        'playing keyboard', 'mowing lawn', 'playing drums']
+        actiontoken = np.array([convert_to_token(a) for a in actionlist])
+    
+        # query the vector from dictionary
+        with torch.no_grad():
+            actionembed = clipmodel.encode_text_light(torch.tensor(actiontoken).to(device))
+                
+        actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(len(actionlist)))
+        
+        if useEncoder:
+            actionFeatures = []
+            with torch.no_grad():
+                clipmodel.half()
+                batch_size = 1000
+                for i in range(0, actionembed.size(0), batch_size):
+                    end_idx = min(i+batch_size, actionembed.size(0))
+                    actionFeature = clipmodel.encode_text(actionembed.squeeze(1)[i:end_idx], torch.from_numpy(actiontoken.squeeze(1)[i:end_idx]))
+                    actionFeatures.append(actionFeature)
+                actiondict = torch.cat(actionFeatures, dim=0)
+        
+        actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(len(actionlist)))
+        del clipmodel
+        torch.cuda.empty_cache()
+        
+        return [actionlist, actiondict, actiontoken]
+    
     elif dataset == 'diving-48':
         anno_path = os.path.join(data_path, 'class.csv')
         cleaned = pd.read_csv(anno_path, header=None, delimiter=',')

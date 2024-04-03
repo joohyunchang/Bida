@@ -16,7 +16,7 @@ import torchaudio
 import random
 import torch
 
-class VideoClsDataset(Dataset):
+class K400VidAudClsDataset(Dataset):
     """Load your own video classification dataset."""
 
     def __init__(self, anno_path, data_path, mode='train', clip_len=8,
@@ -59,11 +59,11 @@ class VideoClsDataset(Dataset):
           
 
         import pandas as pd
-        cleaned = pd.read_csv(self.anno_path, header=0, delimiter=',')
+        cleaned = pd.read_csv(anno_path, header=None, names=['1', '2', '3'])
         # self.dataset_samples = list(cleaned.values[:, 0])[:1000] if mode == 'train' else list(cleaned.values[:, 0])
         self.dataset_samples = list(cleaned.values[:, 0])
-        self.label_array = list(cleaned.values[:, 1])
-        self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 2]) for i in range(len(cleaned))} if args.narration else None
+        self.label_array = list(cleaned.values[:, 2])
+        self.narration_array = None
 
         if (mode == 'train'):
             pass
@@ -131,6 +131,8 @@ class VideoClsDataset(Dataset):
             
             buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
             if len(buffer) == 0:
+                sample = os.path.join(self.audio_path, 'video', self.dataset_samples[index] + '.mp4')
+                buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t)
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during training".format(sample))
                     index = np.random.randint(self.__len__())
@@ -174,17 +176,23 @@ class VideoClsDataset(Dataset):
                 spec = {}
 
             sample = self.dataset_samples[index] + '.mp4'
-            sample = os.path.join(self.data_path, 'val', sample)
+            sample = os.path.join(self.data_path, 'test', sample)
             if self.disable_video:
                 return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
             
             buffer = self.loadvideo_decord(sample)
             if len(buffer) == 0:
+                sample = sample.replace("kinetics400_resized", "kinetics400_resizeds")
+                buffer = self.loadvideo_decord(sample)
+                if len(buffer) == 0:
+                    sample = os.path.join(self.audio_path, 'video', self.dataset_samples[index] + '.mp4')
+                    buffer = self.loadvideo_decord(sample)
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during validation".format(sample))
                     index = np.random.randint(self.__len__())
                     sample = self.dataset_samples[index] + '.mp4'
-                    sample = os.path.join(self.data_path, 'val', sample)
+                    sample = os.path.join(self.data_path, 'test', sample)
+                    sample = sample.replace("kinetics400_resized", "kinetics400_resizeds")
                     buffer = self.loadvideo_decord(sample)
             buffer = self.data_transform(buffer)
             return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
@@ -216,6 +224,9 @@ class VideoClsDataset(Dataset):
             if len(buffer) == 0:
                 sample = sample.replace("kinetics400_resized", "kinetics400_resizeds")
                 buffer = self.loadvideo_decord(sample)
+                if len(buffer) == 0:
+                    sample = os.path.join(self.audio_path, 'video', self.test_dataset[index] + '.mp4')
+                    buffer = self.loadvideo_decord(sample)
                 while len(buffer) == 0:
                     index = np.random.randint(self.__len__())
                     sample = self.test_dataset[index] + '.mp4'

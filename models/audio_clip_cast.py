@@ -581,6 +581,7 @@ class STCrossTransformer(nn.Module):
         spec_frames = (spec_frames+1) //2
         attn_all_frame=attn_all_frame
         CA=CA
+        # self.num_frames = all_frames * 2
         # CA=12
         ###################################
 
@@ -684,10 +685,10 @@ class STCrossTransformer(nn.Module):
         
         ######################## CLIP spatial path #########################
         if not self.audio_only:
-            t_x = x[:, :, 1::2, :, :]
+            # t_x = x[:, :, 1::2, :, :]
+            # t_x = x
         else:
             t_x = spec[:, :, 1::2, :, :] if spec.dim() == 5 else spec.unsqueeze(2)
-        # t_x = x.unsqueeze(2)
         t_t = t_x.shape[2]
         t_x = rearrange(t_x, 'b c t h w -> (b t) c h w')
         t_x = self.clip_conv1(t_x) # shape = [*, embeddim, grid, grid]

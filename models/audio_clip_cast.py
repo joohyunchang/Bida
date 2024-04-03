@@ -685,7 +685,7 @@ class STCrossTransformer(nn.Module):
         
         ######################## CLIP spatial path #########################
         if not self.audio_only:
-            # t_x = x[:, :, 1::2, :, :]
+            t_x = x[:, :, 1::2, :, :]
             # t_x = x
         else:
             t_x = spec[:, :, 1::2, :, :] if spec.dim() == 5 else spec.unsqueeze(2)

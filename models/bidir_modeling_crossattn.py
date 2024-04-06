@@ -409,6 +409,7 @@ class STCrossTransformer(nn.Module):
                  composition=False,
                  fusion_method=None,
                  audio_enabled=False,
+                 audio_patch=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()

@@ -166,7 +166,7 @@ def get_args():
     parser.add_argument('--num_segments', type=int, default= 1)
     parser.add_argument('--num_frames', type=int, default= 16)
     parser.add_argument('--sampling_rate', type=int, default= 4)
-    parser.add_argument('--data_set', default='Kinetics-400', choices=['EPIC_dense','diving-48','Kinetics-400', 'SSV2','MINI_SSV2', 'UCF101', 'HMDB51','image_folder', 'EPIC','Kinetics_sound'],
+    parser.add_argument('--data_set', default='Kinetics-400', choices=['EPIC_dense','diving-48','Kinetics-400', 'SSV2','MINI_SSV2', 'UCF101', 'HMDB51','image_folder', 'EPIC','Kinetics_sound', 'EPIC_sounds'],
                         type=str, help='dataset')
     parser.add_argument('--pred_type', default=None, choices=['noun', 'verb', 'action'])
     parser.add_argument('--output_dir', default='',
@@ -237,6 +237,7 @@ def get_args():
     parser.add_argument('--specnorm', action='store_true', default=False)
     parser.add_argument('--bcast_method', default=None, choices=['seq','add','add_scale','add_param','msa_add'], # sequential, parallel add, parallel add scale
                         type=str, help='bcast_method')
+    parser.add_argument('--process_type', type=str,default='ast')
     
     
     
@@ -279,7 +280,7 @@ def main(args, ds_init):
     # random.seed(seed)
 
     cudnn.benchmark = True
-    args.process_type = 'beats' if 'beats' in args.vmae_model else 'ast'
+    args.process_type = 'beats' if 'beats' in args.vmae_model else args.process_type
     
     dataset_train, args.nb_classes = build_dataset(is_train=True, test_mode=False, args=args)
     if args.disable_eval_during_finetuning:

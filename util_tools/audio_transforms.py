@@ -4,11 +4,12 @@ import numpy as np
 import random
 import torchaudio.compliance.kaldi as ta_kaldi
 import noisereduce as nr
+from librosa import stft, filters
 
 class Spectrogram:
     def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast', weight=1, noisereduce=False, specnorm=False):
-        nperseg = int(round(window_size * resampling_rate / 1e3))
-        noverlap = int(round(step_size * resampling_rate / 1e3))
+        self.nperseg = int(round(window_size * resampling_rate / 1e3))
+        self.noverlap = int(round(step_size * resampling_rate / 1e3))
         self.num_segment = num_segment
         self.length = length
         self.process_type = process_type
@@ -31,6 +32,9 @@ class Spectrogram:
             self.n_mels = n_mels
             self.length = length
             pass
+        elif process_type == 'EPIC_sounds':
+            self.length = length
+            self.sec = length * 0.004995535714 * weight
         else:
             self.length = length
             self.sec = length * 0.004995535714 * weight
@@ -38,8 +42,8 @@ class Spectrogram:
                     torchaudio.transforms.MelSpectrogram(
                         sample_rate=resampling_rate,
                         n_fft=n_fft,  # FFT 창 크기
-                        win_length=nperseg,
-                        hop_length=noverlap,
+                        win_length=self.nperseg,
+                        hop_length=self.noverlap,
                         window_fn=torch.hann_window,
                         n_mels=n_mels  # mel 스펙트로그램 빈의 수
                     ),
@@ -62,18 +66,50 @@ class Spectrogram:
             audio = audio.unsqueeze(0) if audio.dim() == 1 else audio
             for waveform in audio:
                 waveform = waveform.unsqueeze(0) * 2 ** 15
-                if self.n_mels < 128:
+                if self.n_mels <= 128:
                     fbank = ta_kaldi.fbank(waveform, num_mel_bins=self.n_mels, sample_frequency=resampling_rate, frame_length=25, frame_shift=10)
                 else:
                     fbank = ta_kaldi.fbank(waveform, num_mel_bins=self.n_mels, sample_frequency=resampling_rate, frame_length=50, frame_shift=10)
                 fbanks.append(fbank)
-            fbank = torch.stack(fbanks, dim=0)
-            spec = (fbank - fbank_mean) / (2 * fbank_std)
+            spec = torch.stack(fbanks, dim=0)
+            if self.specnorm:
+                spec = (spec - fbank_mean) / (2 * fbank_std)
             self.length = (spec.shape[-2] // 16) * 16 if self.free_length else self.length 
             if spec.shape[-2] != self.length:
                 expand = self.length - spec.shape[-2]
                 spec = spec[:,:self.length,:] if spec.shape[-2] > self.length else  torch.nn.functional.pad(spec, pad=(0, 0, 0, expand))
             spec = spec.squeeze(0) if dim == 1 else spec
+        elif self.process_type == 'EPIC_sounds':
+            dim = audio.dim()
+            # audio = audio.unsqueeze(0) if audio.dim() == 1 else audio
+            if isinstance(audio, torch.Tensor):
+                audio = np.array(audio)
+            # Mel-Spectrogram
+            spec = stft(
+                        audio, 
+                        n_fft=2048,
+                        window='hann',
+                        hop_length=self.noverlap,
+                        win_length=self.nperseg,
+                        pad_mode='constant'
+                    )
+            mel_basis = filters.mel(
+                        sr=resampling_rate,
+                        n_fft=2048,
+                        n_mels=128,
+                        htk=True,
+                        norm=None
+                    )
+            mel_spec = np.dot(mel_basis, np.abs(spec))
+
+            # Log-Mel-Spectrogram
+            spec = np.log(mel_spec + eps).T
+            # print('원래', spec.shape)
+            if spec.shape[-2] != self.length:
+                num_timesteps_to_pad = self.length - spec.shape[-2]
+                spec = spec[:,:self.length,:] if spec.shape[-2] > self.length else np.pad(spec, ((0, num_timesteps_to_pad), (0, 0)), 'edge')
+                # print('결과', spec.shape)
+            spec = torch.tensor(spec)
         else:
             spec = self.spectrogram(audio)
             self.length = (spec.shape[-1] // 16) * 16 if self.free_length else self.length 
@@ -159,7 +195,7 @@ class Spectrogram:
             samples = torch.tensor(reduced_noise).to(device)
         else:
             samples = samples.squeeze(0).to(device)
-        if data_set in ['Kinetics-400','EPIC_split', 'Kinetics_sound'] or use_all_wav:
+        if data_set in ['Kinetics-400','EPIC_split', 'Kinetics_sound','EPIC_sounds'] or use_all_wav:
             left_sec = 0
             right_sec = len(samples) / 60
             left_sample = 0

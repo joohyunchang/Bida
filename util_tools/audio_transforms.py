@@ -7,7 +7,7 @@ import noisereduce as nr
 from librosa import stft, filters
 
 class Spectrogram:
-    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast', weight=1, noisereduce=False, specnorm=False):
+    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast', weight=1, noisereduce=False, specnorm=False, log=False):
         self.nperseg = int(round(window_size * resampling_rate / 1e3))
         self.noverlap = int(round(step_size * resampling_rate / 1e3))
         self.num_segment = num_segment
@@ -16,6 +16,7 @@ class Spectrogram:
         self.free_length = True if length == 0 else False
         self.noisereduce = noisereduce
         self.specnorm = specnorm
+        self.log = log
 
         # torchaudio를 사용한 스펙트로그램 계산
         # self.spectrogram = torch.nn.Sequential(
@@ -75,12 +76,16 @@ class Spectrogram:
             if self.specnorm:
                 spec = (spec - fbank_mean) / (2 * fbank_std)
             self.length = (spec.shape[-2] // 16) * 16 if self.free_length else self.length 
+            if self.log:
+                print('원래', spec.shape)
             if spec.shape[-2] != self.length:
                 expand = self.length - spec.shape[-2]
                 spec = spec[:,:self.length,:] if spec.shape[-2] > self.length else  torch.nn.functional.pad(spec, pad=(0, 0, 0, expand))
             spec = spec.squeeze(0) if dim == 1 else spec
         elif self.process_type == 'EPIC_sounds':
             dim = audio.dim()
+            if self.log:
+                print('원래', audio.shape)
             # audio = audio.unsqueeze(0) if audio.dim() == 1 else audio
             if isinstance(audio, torch.Tensor):
                 audio = np.array(audio)
@@ -104,10 +109,11 @@ class Spectrogram:
 
             # Log-Mel-Spectrogram
             spec = np.log(mel_spec + eps).T
-            # print('원래', spec.shape)
+            if self.log:
+                print('원래', spec.shape)
             if spec.shape[-2] != self.length:
                 num_timesteps_to_pad = self.length - spec.shape[-2]
-                spec = spec[:,:self.length,:] if spec.shape[-2] > self.length else np.pad(spec, ((0, num_timesteps_to_pad), (0, 0)), 'edge')
+                spec = spec[:self.length,:] if spec.shape[-2] > self.length else np.pad(spec, ((0, num_timesteps_to_pad), (0, 0)), 'edge')
                 # print('결과', spec.shape)
             spec = torch.tensor(spec)
         else:
@@ -116,6 +122,8 @@ class Spectrogram:
             if self.specnorm:
                 spec = (spec - (-23)) / (2 * 13.5)  # EK100
                 # spec = (spec - (-20.5)) / (2 * 26.5) # K400
+            if self.log:
+                print('원래', spec.shape)
             if spec.shape[-1] != self.length:
                 expand = self.length - spec.shape[-1]
                 if spec.dim() == 3:
@@ -184,6 +192,8 @@ class Spectrogram:
     def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', audio_centra=1/2, mode=None, data_set='EPIC', extract=False, device='cpu', use_all_wav=False):
         if isinstance(sample, str):
             samples, sample_rate = torchaudio.load(sample)
+            if samples.shape[0] != 1:
+                samples = torch.mean(samples, dim=0, keepdim=True)
         else:
             if isinstance(sample, np.ndarray):
                 sample = torch.tensor(sample)

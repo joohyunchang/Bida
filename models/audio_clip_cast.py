@@ -745,7 +745,13 @@ class STCrossTransformer(nn.Module):
                 t_x = self.head_verb(t_x)
                 return s_x, t_x
         else:
-            if self.audio_enabled:
+            if self.audio_only:
+                s_x, t_x = self.forward_features(spec, spec)
+                x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
+                x = self.head_dropout(x)
+                x = self.head(x)
+                return x
+            elif self.audio_enabled:
                 s_x, t_x = self.forward_features(x, spec)
                 x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
                 x = self.head_dropout(x)

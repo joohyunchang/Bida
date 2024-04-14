@@ -4,6 +4,7 @@ from util_tools.transforms import *
 from util_tools.masking_generator import TubeMaskingGenerator
 from .kinetics import VideoClsDataset, VideoMAE
 from .kinetics_sound import K400VidAudClsDataset
+from .ucf101 import UCF101VidAudClsDataset
 from .ssv2 import SSVideoClsDataset
 from .epic import EpicVideoClsDataset
 from .epic_sounds import EpicSoundsVideoClsDataset
@@ -309,17 +310,17 @@ def build_dataset(is_train, test_mode, args):
         anno_path = None
         if is_train is True:
             mode = 'train'
-            anno_path = os.path.join(args.data_path, 'train.csv')
+            anno_path = os.path.join(args.data_path, 'trainlist01.txt')
         elif test_mode is True:
             mode = 'test'
-            anno_path = os.path.join(args.data_path, 'test.csv') 
+            anno_path = os.path.join(args.data_path, 'testlist01_label.txt') 
         else:  
             mode = 'validation'
-            anno_path = os.path.join(args.data_path, 'val.csv') 
+            anno_path = os.path.join(args.data_path, 'testlist01_label.txt') 
 
-        dataset = VideoClsDataset(
+        dataset = UCF101VidAudClsDataset(
             anno_path=anno_path,
-            data_path='/',
+            data_path=args.data_path,
             mode=mode,
             clip_len=args.num_frames,
             frame_sample_rate=args.sampling_rate,

@@ -5,6 +5,7 @@ from util_tools.masking_generator import TubeMaskingGenerator
 from .kinetics import VideoClsDataset, VideoMAE
 from .kinetics_sound import K400VidAudClsDataset
 from .ucf101 import UCF101VidAudClsDataset
+from .vggsound import VGGSoundVidAudClsDataset
 from .ssv2 import SSVideoClsDataset
 from .epic import EpicVideoClsDataset
 from .epic_sounds import EpicSoundsVideoClsDataset
@@ -310,13 +311,22 @@ def build_dataset(is_train, test_mode, args):
         anno_path = None
         if is_train is True:
             mode = 'train'
-            anno_path = os.path.join(args.data_path, 'trainlist01.txt')
+            if args.ucf101_type in ['1','2','3']:
+                anno_path = os.path.join(args.anno_path, f'trainlist0{args.ucf101_type}_audio.txt')
+            elif args.ucf101_type in ['all_1','all_2','all_3']:
+                anno_path = os.path.join(args.anno_path, f'trainlist0{str.split(args.ucf101_type,"_")[-1]}.txt')
         elif test_mode is True:
             mode = 'test'
-            anno_path = os.path.join(args.data_path, 'testlist01_label.txt') 
+            if args.ucf101_type in ['1','2','3']:
+                anno_path = os.path.join(args.anno_path, f'testlist0{args.ucf101_type}_audio.txt')
+            elif args.ucf101_type in ['all_1','all_2','all_3']:
+                anno_path = os.path.join(args.anno_path, f'testlist0{str.split(args.ucf101_type,"_")[-1]}_label.txt')
         else:  
             mode = 'validation'
-            anno_path = os.path.join(args.data_path, 'testlist01_label.txt') 
+            if args.ucf101_type in ['1','2','3']:
+                anno_path = os.path.join(args.anno_path, f'testlist0{args.ucf101_type}_audio.txt')
+            elif args.ucf101_type in ['all_1','all_2','all_3']:
+                anno_path = os.path.join(args.anno_path, f'testlist0{str.split(args.ucf101_type,"_")[-1]}_label.txt')
 
         dataset = UCF101VidAudClsDataset(
             anno_path=anno_path,
@@ -335,6 +345,37 @@ def build_dataset(is_train, test_mode, args):
             new_width=320,
             args=args)
         nb_classes = 101
+        
+    elif args.data_set == 'VGGSound':
+        mode = None
+        anno_path = None
+        if is_train is True:
+            mode = 'train'
+            anno_path = os.path.join(args.anno_path, 'train_sel.csv')
+        elif test_mode is True:
+            mode = 'test'
+            anno_path = os.path.join(args.anno_path, 'test_sel.csv')
+        else:  
+            mode = 'validation'
+            anno_path = os.path.join(args.anno_path, 'test_sel.csv')
+
+        dataset = VGGSoundVidAudClsDataset(
+            anno_path=anno_path,
+            data_path=args.data_path,
+            mode=mode,
+            clip_len=args.num_frames,
+            frame_sample_rate=args.sampling_rate,
+            num_segment=1,
+            test_num_segment=args.test_num_segment,
+            test_num_crop=args.test_num_crop,
+            num_crop=1 if not test_mode else 3,
+            keep_aspect_ratio=True,
+            crop_size=args.input_size,
+            short_side_size=args.short_side_size,
+            new_height=256,
+            new_width=320,
+            args=args)
+        nb_classes = 309
     
     elif args.data_set == 'HMDB51':
         mode = None

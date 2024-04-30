@@ -205,7 +205,7 @@ class Spectrogram:
             samples = torch.tensor(reduced_noise).to(device)
         else:
             samples = samples.squeeze(0).to(device)
-        if data_set in ['Kinetics-400','EPIC_split', 'Kinetics_sound','EPIC_sounds'] or use_all_wav:
+        if data_set in ['Kinetics-400','EPIC_split', 'Kinetics_sound','EPIC_sounds','UCF101','VGGSound'] or use_all_wav:
             left_sec = 0
             right_sec = len(samples) / 60
             left_sample = 0

@@ -16,7 +16,7 @@ import torchaudio
 import random
 import torch
 
-class UCF101VidAudClsDataset(Dataset):
+class VGGSoundVidAudClsDataset(Dataset):
     """Load your own video classification dataset."""
 
     def __init__(self, anno_path, data_path, mode='train', clip_len=8,
@@ -59,10 +59,10 @@ class UCF101VidAudClsDataset(Dataset):
           
 
         import pandas as pd
-        cleaned = pd.read_csv(anno_path, header=None, names=['1', '2'], delim_whitespace=True)
+        cleaned = pd.read_csv(anno_path, header=0, names=['1', '2', '3'])
         # self.dataset_samples = list(cleaned.values[:, 0])[:1000] if mode == 'train' else list(cleaned.values[:, 0])
         self.dataset_samples = list(cleaned.values[:, 0])
-        self.label_array = list(cleaned.values[:, 1])
+        self.label_array = list(cleaned.values[:, 2])
         self.narration_array = None
 
         if (mode == 'train'): 
@@ -120,6 +120,7 @@ class UCF101VidAudClsDataset(Dataset):
                     except Exception as e:
                         warnings.warn("audio {} not correctly loaded during training, {}".format(audio_sample, self.dataset_samples[index]))
                         warnings.warn(e)
+                        spec = torch.random((3, 16, 224, 224))
             else:
                 spec = {}
 

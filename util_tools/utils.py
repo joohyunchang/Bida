@@ -301,7 +301,7 @@ def init_distributed_mode(args):
     setup_for_distributed(args.rank == 0)
 
 
-def load_state_dict(model, state_dict, prefix='', ignore_missing="relative_position_index"):
+def load_state_dict(model, state_dict, prefix='', ignore_missing="relative_position_index",freeze_list=None):
     missing_keys = []
     unexpected_keys = []
     error_msgs = []
@@ -323,8 +323,14 @@ def load_state_dict(model, state_dict, prefix='', ignore_missing="relative_posit
             if child is not None:
                 load(child, prefix + name + '.')
 
+    before_key = model.state_dict().keys()
+    load_key = state_dict.keys()
     load(model, prefix=prefix)
-
+    if freeze_list is not None:
+        loaded_key = set(before_key).intersection(set(load_key))
+        freeze_but_notload = set(freeze_list).difference(loaded_key)
+        print("Weights of {} are freeze but not initialized from pretrained model: {}".format(
+            model.__class__.__name__, sorted(freeze_but_notload)))
     warn_missing_keys = []
     ignore_missing_keys = []
     for key in missing_keys:
@@ -352,7 +358,7 @@ def load_state_dict(model, state_dict, prefix='', ignore_missing="relative_posit
     if len(error_msgs) > 0:
         print('\n'.join(error_msgs))
         
-def load_bidir_weights(model, args):
+def load_bidir_weights(model, args, freeze_list=None):
     if args.vmae_finetune.startswith('https'):
         checkpoint = torch.hub.load_state_dict_from_url(
             args.vmae_finetune, map_location='cpu', check_hash=True)
@@ -495,7 +501,7 @@ def load_bidir_weights(model, args):
             new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
             checkpoint_model['pos_embed'] = new_pos_embed
 
-    load_state_dict(model, checkpoint_model, prefix=args.model_prefix)
+    load_state_dict(model, checkpoint_model, prefix=args.model_prefix,freeze_list=freeze_list)
     
     # with torch.no_grad():#! module_layers에 들어가는 것만 한다.
     #     for i in range(12):
@@ -1003,6 +1009,18 @@ def unfreeze_block(model, block_list):
             else:
                 param.requires_grad = False
     return model, unfreeze_list
+
+def freeze_block_list(model, block_list):
+    freeze_list = []
+    for name, param in model.named_parameters():
+        should_freeze = True
+        for block in block_list:
+            if block in name:
+                should_freeze = False
+                break
+        if should_freeze:
+            freeze_list.append(name)
+    return freeze_list
 
 def notice_message(token, channel, text, attachments):
     attachments = json.dumps(attachments) # 리스트는 Json 으로 덤핑 시켜야 Slack한테 제대로 간다.

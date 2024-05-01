@@ -19,7 +19,7 @@ from timm.utils import ModelEma
 from util_tools.optim_factory import create_optimizer, get_parameter_groups, LayerDecayValueAssigner
 
 from dataset.datasets import build_dataset
-from util_tools.utils import NativeScalerWithGradNormCount as NativeScaler, load_bidir_weights, unfreeze_block
+from util_tools.utils import NativeScalerWithGradNormCount as NativeScaler, load_bidir_weights, unfreeze_block, freeze_block_list
 from util_tools.utils import multiple_samples_collate, notice_message, laod_eval_weights, audio_collate_fn, test_audio_collate_fn, audio_list_collate_fn, test_audio_list_collate_fn
 import util_tools.utils as utils
 import models.bidir_modeling_after_crossattn
@@ -281,7 +281,7 @@ def main(args, ds_init):
     # random.seed(seed)
 
     cudnn.benchmark = True
-    args.process_type = 'beats' if 'beats' in args.vmae_model else args.process_type
+    # args.process_type = 'beats' if 'beats' in args.vmae_model else args.process_type
     args.audio_path = None if 'all' in args.ucf101_type else args.audio_path
     
     dataset_train, args.nb_classes = build_dataset(is_train=True, test_mode=False, args=args)
@@ -402,10 +402,11 @@ def main(args, ds_init):
         model_args['bcast_method'] = args.bcast_method
     model = create_model(**model_args)
     
+    freeze_list = freeze_block_list(model,args.unfreeze_layers)
     if args.fine_tune is not None:
         laod_eval_weights(model, args.fine_tune, args)
     else:
-        load_bidir_weights(model, args)
+        load_bidir_weights(model, args, freeze_list=freeze_list)
     
     ###### VMAE 검증을 위해 freeze는 잠시 꺼둔다 #############
     if args.unfreeze_layers is not None:
@@ -788,7 +789,7 @@ def main(args, ds_init):
                             row[1].fill = red_fill
                             row[3].fill = red_fill
                     wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
-            acc_str+=f"Epoch {current_epoch} Top 1 Accuracy is {final_top1_action:05.2f}, {final_top1_noun:05.2f}, {final_top1_verb:05.2f}\n" if args.composition else f"Epoch {current_epoch} Top 1 Accuracy is {final_top1:05.2f}\n"
+            acc_str+=f"Epoch {current_epoch} Top 1 Accuracy is {final_top1_action:05.2f}, {final_top1_noun:05.2f}, {final_top1_verb:05.2f}, Top 5 ACT {final_top5_action:05.2f}\n" if args.composition else f"Epoch {current_epoch} Top 1 Accuracy is {final_top1:05.2f}, Top 5 {final_top5:05.2f}\n"
     
     
 

@@ -109,6 +109,11 @@ class Spectrogram:
 
             # Log-Mel-Spectrogram
             spec = np.log(mel_spec + eps).T
+            if self.specnorm:
+                spec = (spec - (-1.5267)) / (2 * 1.0327)
+                # spec = (spec - fbank_mean) / (2 * fbank_std)
+                # spec = (spec - (-23)) / (2 * 13.5)  # EK100
+                pass
             if self.log:
                 print('원래', spec.shape)
             if spec.shape[-2] != self.length:

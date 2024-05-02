@@ -438,8 +438,8 @@ class STCrossTransformer(nn.Module):
                  late_fusion=0,
                  CA = 0,
                  use_Adapter=True,
-                use_SA=True, 
-                use_MLP=True,
+                 use_SA=True, 
+                 use_MLP=True,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()

@@ -912,7 +912,7 @@ class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None,
                  text_dim=512, text_num_heads=8, use_Adapter=False, CA=[i for i in range(12)], audio_enabled=False, 
-                 spec_frames=8, attn_all_frame=True, audio_patch=196, CA_eq=False, bcast_method='seq'):
+                 spec_frames=8, attn_all_frame=True, audio_patch=196, CA_eq=False, bcast_method='seq', late_fusion=0, use_SA=True, use_MLP=True):
         super().__init__()
         self.num_layer = num_layer
         self.CA = CA
@@ -923,31 +923,39 @@ class Block(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.act = act_layer()
         self.use_Adapter = use_Adapter
+        self.late_fusion = late_fusion
         self.audio_enabled = audio_enabled
         bcast_method = 'seq' if bcast_method == None else bcast_method
+        self.use_SA, self.use_MLP = True, True
+        if num_layer >= late_fusion:
+            self.use_Adapter = True
+            self.use_SA, self.use_MLP = use_SA, use_MLP
         ###################################### MHSA code #####################################
         ############################ AIM MHSA ###########################
-        self.clip_ln_1 = LayerNorm(dim)
-        self.clip_attn = nn.MultiheadAttention(dim, num_heads)
-        if self.use_Adapter:
-            self.S_Adapter = Adapter(dim)
+        if self.use_SA:
+            self.clip_ln_1 = LayerNorm(dim)
+            self.clip_attn = nn.MultiheadAttention(dim, num_heads)
+            if self.use_Adapter:
+                self.S_Adapter = Adapter(dim)
         ##################################################################
         
         ############################ VMAE MHSA ###########################
-        self.norm1 = norm_layer(dim)
-        self.attn = Attention(
-            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
-            attn_drop=attn_drop, proj_drop=drop, attn_head_dim=attn_head_dim)
-        if self.use_Adapter:
-            self.T_Adapter = Adapter(dim)
+        if self.use_SA:
+            self.norm1 = norm_layer(dim)
+            self.attn = Attention(
+                dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
+                attn_drop=attn_drop, proj_drop=drop, attn_head_dim=attn_head_dim)
+            if self.use_Adapter:
+                self.T_Adapter = Adapter(dim)
         ##################################################################
         
         ############################ CLIP TEXT MHSA ######################
-        if not audio_enabled:
-            self.clip_text_ln_1 = LayerNorm(text_dim)
-            self.clip_text_attn = nn.MultiheadAttention(text_dim, text_num_heads)
-        if self.use_Adapter:
-            self.Text_Adapter = Adapter(text_dim)
+        if self.use_SA:
+            if not audio_enabled:
+                self.clip_text_ln_1 = LayerNorm(text_dim)
+                self.clip_text_attn = nn.MultiheadAttention(text_dim, text_num_heads)
+            if self.use_Adapter:
+                self.Text_Adapter = Adapter(text_dim)
         ##################################################################
         #########################################################################################
         
@@ -955,53 +963,57 @@ class Block(nn.Module):
         self.bcast_method = bcast_method
         assert bcast_method in ['seq','add','add_scale','add_param','msa_add'] # sequential, parallel add, parallel add scale
         skip_connect = False if bcast_method in ['add','add_scale','msa_add'] else True
-        if not self.CA_eq or self.num_layer in self.CA:
-            self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t', skip_connect=skip_connect)
-        if self.num_layer in self.CA:
-            if audio_enabled:
-                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect)
-                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect)
-            else:
-                self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text', attn_all_frame=attn_all_frame, skip_connect=skip_connect)
-                self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text', attn_all_frame=attn_all_frame, skip_connect=skip_connect)
-        
-        if bcast_method == 'add_param':
-            self.s_scale_cross = torch.nn.Parameter(torch.randn(1))
-            self.t_scale_cross = torch.nn.Parameter(torch.randn(1))
-            self.text_scale_cross = torch.nn.Parameter(torch.randn(1))
+        if num_layer >= late_fusion:
+            if not self.CA_eq or self.num_layer in self.CA:
+                self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-t', skip_connect=skip_connect)
+            if self.num_layer in self.CA:
+                if audio_enabled:
+                    self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect)
+                    self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect)
+                else:
+                    self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text', attn_all_frame=attn_all_frame, skip_connect=skip_connect)
+                    self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text', attn_all_frame=attn_all_frame, skip_connect=skip_connect)
+            
+            if bcast_method == 'add_param':
+                self.s_scale_cross = torch.nn.Parameter(torch.randn(1))
+                self.t_scale_cross = torch.nn.Parameter(torch.randn(1))
+                self.text_scale_cross = torch.nn.Parameter(torch.randn(1))
         ###########################################################################################
         
         ###################################### FFN code #########################################
         ############################ AIM FFN ###############################
-        self.clip_ln_2 = LayerNorm(dim)
-        self.clip_mlp = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(dim, dim * 4)),
-            ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(dim * 4, dim))
-        ]))
-        if self.use_Adapter:
-            self.S_MLP_Adapter = Adapter(dim, skip_connect=False)
-        self.attn_mask = None
+        if self.use_MLP:
+            self.clip_ln_2 = LayerNorm(dim)
+            self.clip_mlp = nn.Sequential(OrderedDict([
+                ("c_fc", nn.Linear(dim, dim * 4)),
+                ("gelu", QuickGELU()),
+                ("c_proj", nn.Linear(dim * 4, dim))
+            ]))
+            if self.use_Adapter:
+                self.S_MLP_Adapter = Adapter(dim, skip_connect=False)
+            self.attn_mask = None
         #####################################################################
         
         ############################ VMAE FFN ###############################
-        self.norm2 = norm_layer(dim)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
-        if self.use_Adapter:
-            self.T_MLP_Adapter = Adapter(dim, skip_connect=False)
+        if self.use_MLP:
+            self.norm2 = norm_layer(dim)
+            self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+            if self.use_Adapter:
+                self.T_MLP_Adapter = Adapter(dim, skip_connect=False)
         #####################################################################
         
         ############################ CLIP TEXT FFN ##########################
-        if not audio_enabled:
-            self.clip_text_ln_2 = LayerNorm(text_dim)
-            self.clip_text_mlp = nn.Sequential(OrderedDict([
-                ("c_fc", nn.Linear(text_dim, text_dim * 4)),
-                ("gelu", QuickGELU()),
-                ("c_proj", nn.Linear(text_dim * 4, text_dim))
-            ]))
-        if self.use_Adapter:
-            self.Text_MLP_Adapter = Adapter(text_dim, skip_connect=False)
-        self.attn_mask = None
+        if self.use_MLP:
+            if not audio_enabled:
+                self.clip_text_ln_2 = LayerNorm(text_dim)
+                self.clip_text_mlp = nn.Sequential(OrderedDict([
+                    ("c_fc", nn.Linear(text_dim, text_dim * 4)),
+                    ("gelu", QuickGELU()),
+                    ("c_proj", nn.Linear(text_dim * 4, text_dim))
+                ]))
+            if self.use_Adapter:
+                self.Text_MLP_Adapter = Adapter(text_dim, skip_connect=False)
+            self.attn_mask = None
         ####################################################################
         #########################################################################################
         
@@ -1070,98 +1082,101 @@ class Block(nn.Module):
             
         
         ############################ MHSA Forward #############################
-        if self.use_Adapter:
-            # AIM Space MHSA
-            s_x = s_x + self.S_Adapter(self.attention(self.clip_ln_1(s_x)))
-            # VMAE Time MHSA
-            t_x = t_x + self.T_Adapter(self.attn(self.norm1(t_x)))
-        else:
-            # AIM Space MHSA
-            s_x = s_x + self.attention(self.clip_ln_1(s_x))
-            # VMAE Time MHSA
-            t_x = t_x + self.attn(self.norm1(t_x))
-        # CLIP Text MHSA
-        if self.audio_enabled:
+        if self.use_SA:
             if self.use_Adapter:
-                text = text + self.Text_Adapter(self.attention(self.clip_ln_1(text)))
+                # AIM Space MHSA
+                s_x = s_x + self.S_Adapter(self.attention(self.clip_ln_1(s_x)))
+                # VMAE Time MHSA
+                t_x = t_x + self.T_Adapter(self.attn(self.norm1(t_x)))
             else:
-                text = text + self.attention(self.clip_ln_1(text))
-        else:
-            if self.use_Adapter:
-                text = text + self.Text_Adapter(self.text_attention(self.clip_text_ln_1(text)))
+                # AIM Space MHSA
+                s_x = s_x + self.attention(self.clip_ln_1(s_x))
+                # VMAE Time MHSA
+                t_x = t_x + self.attn(self.norm1(t_x))
+            # CLIP Text MHSA
+            if self.audio_enabled:
+                if self.use_Adapter:
+                    text = text + self.Text_Adapter(self.attention(self.clip_ln_1(text)))
+                else:
+                    text = text + self.attention(self.clip_ln_1(text))
             else:
-                text = text + self.text_attention(self.clip_text_ln_1(text))
+                if self.use_Adapter:
+                    text = text + self.Text_Adapter(self.text_attention(self.clip_text_ln_1(text)))
+                else:
+                    text = text + self.text_attention(self.clip_text_ln_1(text))
         ########################################################################
         
         ############################ Cross Forward #############################
-        if self.bcast_method == 'seq':
-            if not self.CA_eq or self.num_layer in self.CA:
-                s_x, t_x = self.s_t_b_cast(s_x, t_x)
-            if self.num_layer in self.CA:
-                s_x, text = self.s_text_b_cast(s_x, text)
-                t_x, text = self.t_text_b_cast(t_x, text)
-        elif self.bcast_method == 'add_param':
-            if not self.CA_eq or self.num_layer in self.CA:
-                s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
-            if self.num_layer in self.CA:
-                s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
-                t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
-            else:
-                s_x_ct, text_ct = s_x_cv, text
-                t_x_vt, text_vt = t_x_cv, text
-            s_x = torch.sigmoid(self.s_scale_cross) * s_x_cv + (1-torch.sigmoid(self.s_scale_cross))*s_x_ct
-            t_x = torch.sigmoid(self.t_scale_cross)*t_x_cv + (1-torch.sigmoid(self.t_scale_cross))*t_x_vt
-            text = torch.sigmoid(self.text_scale_cross)*text_ct + (1-torch.sigmoid(self.text_scale_cross))*text_vt
-        elif self.bcast_method == 'add':
-            if not self.CA_eq or self.num_layer in self.CA:
-                s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
-            if self.num_layer in self.CA:
-                s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
-                t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
-            else:
-                s_x_ct, text_ct = 0, 0
-                t_x_vt, text_vt = 0, 0
-            s_x = s_x + s_x_cv + s_x_ct
-            t_x = t_x + t_x_cv + t_x_vt
-            text = text + text_ct + text_vt
-        elif self.bcast_method == 'add_scale':
-            if not self.CA_eq or self.num_layer in self.CA:
-                s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
-            if self.num_layer in self.CA:
-                s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
-                t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
-            else:
-                s_x_ct, text_ct = 0, 0
-                t_x_vt, text_vt = 0, 0
-            s_x = s_x + self.drop_path(self.scale * (s_x_cv + s_x_ct))
-            t_x = t_x + self.drop_path(self.scale * (t_x_cv + t_x_vt))
-            if self.num_layer in self.CA:
-                text = text + self.drop_path(self.scale * (text_ct + text_vt))
+        if self.num_layer >= self.late_fusion:
+            if self.bcast_method == 'seq':
+                if not self.CA_eq or self.num_layer in self.CA:
+                    s_x, t_x = self.s_t_b_cast(s_x, t_x)
+                if self.num_layer in self.CA:
+                    s_x, text = self.s_text_b_cast(s_x, text)
+                    t_x, text = self.t_text_b_cast(t_x, text)
+            elif self.bcast_method == 'add_param':
+                if not self.CA_eq or self.num_layer in self.CA:
+                    s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+                if self.num_layer in self.CA:
+                    s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+                    t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+                else:
+                    s_x_ct, text_ct = s_x_cv, text
+                    t_x_vt, text_vt = t_x_cv, text
+                s_x = torch.sigmoid(self.s_scale_cross) * s_x_cv + (1-torch.sigmoid(self.s_scale_cross))*s_x_ct
+                t_x = torch.sigmoid(self.t_scale_cross)*t_x_cv + (1-torch.sigmoid(self.t_scale_cross))*t_x_vt
+                text = torch.sigmoid(self.text_scale_cross)*text_ct + (1-torch.sigmoid(self.text_scale_cross))*text_vt
+            elif self.bcast_method == 'add':
+                if not self.CA_eq or self.num_layer in self.CA:
+                    s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+                if self.num_layer in self.CA:
+                    s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+                    t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+                else:
+                    s_x_ct, text_ct = 0, 0
+                    t_x_vt, text_vt = 0, 0
+                s_x = s_x + s_x_cv + s_x_ct
+                t_x = t_x + t_x_cv + t_x_vt
+                text = text + text_ct + text_vt
+            elif self.bcast_method == 'add_scale':
+                if not self.CA_eq or self.num_layer in self.CA:
+                    s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+                if self.num_layer in self.CA:
+                    s_x_ct, text_ct = self.s_text_b_cast(s_x, text)
+                    t_x_vt, text_vt = self.t_text_b_cast(t_x, text)
+                else:
+                    s_x_ct, text_ct = 0, 0
+                    t_x_vt, text_vt = 0, 0
+                s_x = s_x + self.drop_path(self.scale * (s_x_cv + s_x_ct))
+                t_x = t_x + self.drop_path(self.scale * (t_x_cv + t_x_vt))
+                if self.num_layer in self.CA:
+                    text = text + self.drop_path(self.scale * (text_ct + text_vt))
             
         #########################################################################
         
         ############################ FFN Forward ##################################
-        s_xn = self.clip_ln_2(s_x)
-        t_xn = self.norm2(t_x)
-        if self.use_Adapter:
-            s_x = s_x + self.clip_mlp(s_xn) + self.drop_path(self.scale * self.S_MLP_Adapter(s_xn))
-            t_x = t_x + self.mlp(t_xn) + self.drop_path(self.scale * self.T_MLP_Adapter(t_xn))
-        else:
-            s_x = s_x + self.clip_mlp(s_xn)
-            t_x = t_x + self.mlp(t_xn)
-        
-        if self.audio_enabled:
-            text_xn = self.clip_ln_2(text)
+        if self.use_MLP:
+            s_xn = self.clip_ln_2(s_x)
+            t_xn = self.norm2(t_x)
             if self.use_Adapter:
-                text = text + self.clip_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+                s_x = s_x + self.clip_mlp(s_xn) + self.drop_path(self.scale * self.S_MLP_Adapter(s_xn))
+                t_x = t_x + self.mlp(t_xn) + self.drop_path(self.scale * self.T_MLP_Adapter(t_xn))
             else:
-                text = text + self.clip_mlp(text_xn)
-        else:
-            text_xn = self.clip_text_ln_2(text)
-            if self.use_Adapter:
-                text = text + self.clip_text_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+                s_x = s_x + self.clip_mlp(s_xn)
+                t_x = t_x + self.mlp(t_xn)
+            
+            if self.audio_enabled:
+                text_xn = self.clip_ln_2(text)
+                if self.use_Adapter:
+                    text = text + self.clip_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+                else:
+                    text = text + self.clip_mlp(text_xn)
             else:
-                text = text + self.clip_text_mlp(text_xn)
+                text_xn = self.clip_text_ln_2(text)
+                if self.use_Adapter:
+                    text = text + self.clip_text_mlp(text_xn) + self.drop_path(self.scale * self.Text_MLP_Adapter(text_xn))
+                else:
+                    text = text + self.clip_text_mlp(text_xn)
         ############################################################################
         
         return s_x, t_x, text
@@ -1233,6 +1248,9 @@ class STCrossTransformer(nn.Module):
                  audio_patch=196,
                  CA_eq=False,
                  use_Adapter=True,
+                 late_fusion=0,
+                 use_SA=True, 
+                 use_MLP=True,
                  bcast_method='seq',
                  use_textF = True):
         super().__init__()
@@ -1304,7 +1322,7 @@ class STCrossTransformer(nn.Module):
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
                 init_values=init_values, num_layer=i, text_dim=self.text_dim, text_num_heads=text_num_heads, use_Adapter=use_Adapter, CA=CA, audio_enabled=self.audio_enabled,
-                spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, CA_eq=CA_eq, bcast_method=bcast_method)
+                spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, CA_eq=CA_eq, bcast_method=bcast_method, late_fusion=late_fusion, use_SA=use_SA, use_MLP=use_MLP)
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)
@@ -1839,4 +1857,33 @@ def compo_cast_single_audio_Bsquare_CA0_base_patch16_224(pretrained=False, args=
         patch_size=16, embed_dim=768, text_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, CA=0, output_text_dim=768,
         prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, **kwargs)
+    return model
+
+
+
+@register_model
+def compo_cast_single_audio_Bsquare_CA9_late_fusion_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, output_text_dim=768,
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, 
+        late_fusion=12, CA=12, use_Adapter=False,**kwargs)
+    return model
+
+@register_model
+def compo_cast_single_audio_Bsquare_CA9_late_fusion2_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, output_text_dim=768,
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, 
+        late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=True, **kwargs)
+    return model
+
+@register_model
+def compo_cast_single_audio_Bsquare_CA9_late_fusion3_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, text_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, text_num_heads=12, output_text_dim=768,
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, 
+        late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=False, **kwargs)
     return model

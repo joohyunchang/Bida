@@ -1276,7 +1276,7 @@ class STCrossTransformer(nn.Module):
         self.split_projection = False
         self.use_videoF = True
         self.use_textF = True
-        CA = [i for i in range(CA, 12)]
+        CA = [i for i in range(CA, depth)]
         attn_all_frame = attn_all_frame
         # ==============================================================================================================
         

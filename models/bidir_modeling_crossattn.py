@@ -283,9 +283,9 @@ class CrossAttentionT2S(nn.Module):
 
     
 class Block(nn.Module):
-
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None):
+                 drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None, 
+                 use_Adapter=True, late_fusion=0, CA=[i for i in range(12)], use_SA=True, use_MLP=True):
         super().__init__()
         self.num_layer = num_layer
         self.num_heads = num_heads
@@ -293,24 +293,34 @@ class Block(nn.Module):
         self.scale = 0.5
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.act = act_layer()
-        
+        self.use_Adapter = use_Adapter 
+        self.late_fusion = late_fusion
+        self.CA = CA
+        self.use_SA, self.use_MLP = True, True
+        if num_layer >= late_fusion:
+            self.use_Adapter = True
+            self.use_SA, self.use_MLP = use_SA, use_MLP
         ###################################### MHSA code #####################################
         ############################ AIM MHSA ###########################
-        self.clip_ln_1 = LayerNorm(dim)
-        self.clip_attn = nn.MultiheadAttention(dim, num_heads)
-        self.S_Adapter = Adapter(dim)
+        if self.use_SA:
+            self.clip_ln_1 = LayerNorm(dim)
+            self.clip_attn = nn.MultiheadAttention(dim, num_heads)
+            if self.use_Adapter:
+                self.S_Adapter = Adapter(dim)
         ##################################################################
         
         ############################ VMAE MHSA ###########################
-        self.norm1 = norm_layer(dim)
-        self.attn = Attention(
-            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
-            attn_drop=attn_drop, proj_drop=drop, attn_head_dim=attn_head_dim)
-        self.T_Adapter = Adapter(dim)
+        if self.use_SA:
+            self.norm1 = norm_layer(dim)
+            self.attn = Attention(
+                dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
+                attn_drop=attn_drop, proj_drop=drop, attn_head_dim=attn_head_dim)
+            if self.use_Adapter:
+                self.T_Adapter = Adapter(dim)
         ##################################################################
         #########################################################################################
         
-        if num_layer >= 0:
+        if self.num_layer in self.CA and num_layer >= late_fusion:
             ###################################### Cross attention ####################################
             self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
             self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
@@ -324,20 +334,24 @@ class Block(nn.Module):
         
         ###################################### FFN code #########################################
         ############################ AIM FFN ###############################
-        self.clip_ln_2 = LayerNorm(dim)
-        self.clip_mlp = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(dim, dim * 4)),
-            ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(dim * 4, dim))
-        ]))
-        self.S_MLP_Adapter = Adapter(dim, skip_connect=False)
-        self.attn_mask = None
+        if self.use_MLP:
+            self.clip_ln_2 = LayerNorm(dim)
+            self.clip_mlp = nn.Sequential(OrderedDict([
+                ("c_fc", nn.Linear(dim, dim * 4)),
+                ("gelu", QuickGELU()),
+                ("c_proj", nn.Linear(dim * 4, dim))
+            ]))
+            if self.use_Adapter:
+                self.S_MLP_Adapter = Adapter(dim, skip_connect=False)
+            self.attn_mask = None
         #####################################################################
         
         ############################ VMAE FFN ###############################
-        self.norm2 = norm_layer(dim)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
-        self.T_MLP_Adapter = Adapter(dim, skip_connect=False)
+        if self.use_MLP:
+            self.norm2 = norm_layer(dim)
+            self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+            if self.use_Adapter:
+                self.T_MLP_Adapter = Adapter(dim, skip_connect=False)
         #######################################################################
         #########################################################################################
         
@@ -354,13 +368,20 @@ class Block(nn.Module):
         num_frames = bt//B
         
         ############################ MHSA Forward #############################
-        # AIM Space MHSA
-        s_x = s_x + self.S_Adapter(self.attention(self.clip_ln_1(s_x)))
-        # VMAE Time MHSA
-        t_x = t_x + self.T_Adapter(self.attn(self.norm1(t_x)))
+        if self.use_SA:
+            if self.use_Adapter:
+                # AIM Space MHSA
+                s_x = s_x + self.S_Adapter(self.attention(self.clip_ln_1(s_x)))
+                # VMAE Time MHSA
+                t_x = t_x + self.T_Adapter(self.attn(self.norm1(t_x)))
+            else:
+                # AIM Space MHSA
+                s_x = s_x + self.attention(self.clip_ln_1(s_x))
+                # VMAE Time MHSA
+                t_x = t_x + self.attn(self.norm1(t_x))
         ########################################################################
         
-        if self.num_layer >= 0:
+        if self.num_layer in self.CA and self.num_layer >= self.late_fusion:
             ############################ Cross Forward #############################
             n_s_x = self.ln_s_cross(self.cross_s_down(s_x))
             n_t_x = self.ln_t_cross(self.cross_t_down(t_x))
@@ -371,11 +392,15 @@ class Block(nn.Module):
             #########################################################################
         
         ############################ FFN Forward ##################################
-        s_xn = self.clip_ln_2(s_x)
-        s_x = s_x + self.clip_mlp(s_xn) + self.drop_path(self.scale * self.S_MLP_Adapter(s_xn))
-        
-        t_xn = self.norm2(t_x)
-        t_x = t_x + self.mlp(t_xn) + self.drop_path(self.scale * self.T_MLP_Adapter(t_xn))
+        if self.use_MLP:
+            s_xn = self.clip_ln_2(s_x)
+            t_xn = self.norm2(t_x)
+            if self.use_Adapter:
+                s_x = s_x + self.clip_mlp(s_xn) + self.drop_path(self.scale * self.S_MLP_Adapter(s_xn))
+                t_x = t_x + self.mlp(t_xn) + self.drop_path(self.scale * self.T_MLP_Adapter(t_xn))
+            else:
+                s_x = s_x + self.clip_mlp(s_xn)
+                t_x = t_x + self.mlp(t_xn)
         ############################################################################
         
         return s_x, t_x
@@ -410,6 +435,11 @@ class STCrossTransformer(nn.Module):
                  fusion_method=None,
                  audio_enabled=False,
                  audio_patch=False,
+                 late_fusion=0,
+                 CA = 0,
+                 use_Adapter=True,
+                use_SA=True, 
+                use_MLP=True,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -420,6 +450,10 @@ class STCrossTransformer(nn.Module):
         self.down_ratio = down_ratio
         self.composition = composition
         self.audio_enabled = audio_enabled
+        # =================================================================
+        CA = [i for i in range(CA, depth)]
+        # =================================================================
+        
         self.patch_embed = PatchEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim, num_frames=all_frames, tubelet_size=self.tubelet_size)
         num_patches = self.patch_embed.num_patches
@@ -443,7 +477,7 @@ class STCrossTransformer(nn.Module):
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
+                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, late_fusion=late_fusion, CA=CA, use_Adapter=use_Adapter, use_SA=use_SA, use_MLP=use_MLP,
                 init_values=init_values, num_layer=i)
             for i in range(depth)])
         
@@ -608,4 +642,28 @@ def compo_audio_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_late_fusion_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_late_fusion2_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=True, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_late_fusion3_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=False, **kwargs)
     return model

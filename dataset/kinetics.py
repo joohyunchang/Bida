@@ -128,15 +128,14 @@ class VideoClsDataset(Dataset):
             sample = os.path.join(self.data_path, 'train', sample)
             if self.disable_video:
                 return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
-            
-            buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
+            buffer, all_idx = self.loadvideo_decord(sample, sample_rate_scale=scale_t, return_index=True) # T H W C
             if len(buffer) == 0:
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during training".format(sample))
                     index = np.random.randint(self.__len__())
                     sample = self.dataset_samples[index] + '.mp4'
                     sample = os.path.join(self.data_path, 'train', sample)
-                    buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t)
+                    buffer, all_idx = self.loadvideo_decord(sample, sample_rate_scale=scale_t, return_index=True)
 
             if args.num_sample > 1:
                 frame_list = []
@@ -151,8 +150,8 @@ class VideoClsDataset(Dataset):
                 return frame_list, label_list, index_list, spec, caption
             else:
                 buffer = self._aug_frame(buffer, args)
-            
-            return buffer, self.label_array[index], index, spec, caption
+            all_idx = np.concatenate((idx, all_idx))
+            return buffer, self.label_array[index], index, spec, caption, all_idx
         
         elif self.mode == 'validation':
             # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
@@ -178,16 +177,17 @@ class VideoClsDataset(Dataset):
             if self.disable_video:
                 return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
             
-            buffer = self.loadvideo_decord(sample)
+            buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             if len(buffer) == 0:
                 while len(buffer) == 0:
                     warnings.warn("video {} not correctly loaded during validation".format(sample))
                     index = np.random.randint(self.__len__())
                     sample = self.dataset_samples[index] + '.mp4'
                     sample = os.path.join(self.data_path, 'val', sample)
-                    buffer = self.loadvideo_decord(sample)
+                    buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             buffer = self.data_transform(buffer)
-            return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+            all_idx = np.concatenate((idx, all_idx))
+            return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
 
         elif self.mode == 'test':
             # caption = random.choice(self.narration_array[self.test_dataset[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
@@ -202,7 +202,7 @@ class VideoClsDataset(Dataset):
                     audio_id = self.test_dataset[index]
                     audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                     try:
-                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
+                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set, return_index=True)
                     except Exception as e:
                         warnings.warn("audio {} not correctly loaded during testing, {}".format(audio_sample, self.dataset_samples[index]))
                         warnings.warn(e)
@@ -212,18 +212,17 @@ class VideoClsDataset(Dataset):
             sample = self.test_dataset[index] + '.mp4'
             sample = os.path.join(self.data_path, 'test', sample)
             chunk_nb, split_nb = self.test_seg[index]
-            buffer = self.loadvideo_decord(sample)
+            buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             if len(buffer) == 0:
                 sample = sample.replace("kinetics400_resized", "kinetics400_resizeds")
-                buffer = self.loadvideo_decord(sample)
+                buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
                 while len(buffer) == 0:
                     index = np.random.randint(self.__len__())
                     sample = self.test_dataset[index] + '.mp4'
                     sample = os.path.join(self.data_path, 'test', sample)
                     chunk_nb, split_nb = self.test_seg[index]
-                    buffer = self.loadvideo_decord(sample)
                     sample = sample.replace("kinetics400_resized", "kinetics400_resizeds")
-                    buffer = self.loadvideo_decord(sample)
+                    buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
                     warnings.warn("video {}, temporal {}, spatial {} not found during testing".format(\
                         str(self.test_dataset[index]), chunk_nb, split_nb))
 
@@ -236,6 +235,7 @@ class VideoClsDataset(Dataset):
             temporal_step = max(1.0 * (buffer.shape[0] - self.clip_len) \
                                 / (self.test_num_segment - 1), 0)
             temporal_start = int(chunk_nb * temporal_step)
+            all_idx = all_idx[temporal_start:temporal_start + self.clip_len]
             spatial_start = int(split_nb * spatial_step)
             if buffer.shape[1] >= buffer.shape[2]:
                 buffer = buffer[temporal_start:temporal_start + self.clip_len, \
@@ -245,8 +245,9 @@ class VideoClsDataset(Dataset):
                        :, spatial_start:spatial_start + self.short_side_size, :]
 
             buffer = self.data_transform(buffer)
+            all_idx = np.concatenate((idx, all_idx))
             return buffer, self.test_label_array[index], sample.split("/")[-1].split(".")[0], \
-                   chunk_nb, split_nb, spec, caption
+                   chunk_nb, split_nb, spec, caption, all_idx
         else:
             raise NameError('mode {} unkown'.format(self.mode))
 
@@ -312,16 +313,20 @@ class VideoClsDataset(Dataset):
         return buffer
 
 
-    def loadvideo_decord(self, sample, sample_rate_scale=1):
+    def loadvideo_decord(self, sample, sample_rate_scale=1, return_index=False):
         """Load video content using Decord"""
         fname = sample
 
         if not (os.path.exists(fname)):
+            if return_index:
+                return [], []
             return []
 
         # avoid hanging issue
         if os.path.getsize(fname) < 1 * 1024:
             print('SKIP: ', fname, " - ", os.path.getsize(fname))
+            if return_index:
+                return [], []
             return []
         try:
             if self.keep_aspect_ratio:
@@ -331,6 +336,8 @@ class VideoClsDataset(Dataset):
                                  num_threads=1, ctx=cpu(0))
         except:
             print("video cannot be loaded by decord: ", fname)
+            if return_index:
+                return [], []
             return []
 
         if self.mode == 'test':
@@ -339,6 +346,8 @@ class VideoClsDataset(Dataset):
                 all_index.append(all_index[-1])
             vr.seek(0)
             buffer = vr.get_batch(all_index).asnumpy()
+            if return_index:
+                return buffer, np.array([idx/vr.get_avg_fps() for idx in all_index])
             return buffer
 
         # handle temporal segments
@@ -362,6 +371,8 @@ class VideoClsDataset(Dataset):
         all_index = all_index[::int(sample_rate_scale)]
         vr.seek(0)
         buffer = vr.get_batch(all_index).asnumpy()
+        if return_index:
+            return buffer, np.array([idx/vr.get_avg_fps() for idx in all_index])
         return buffer
 
     def __len__(self):

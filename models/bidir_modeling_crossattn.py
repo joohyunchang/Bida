@@ -183,6 +183,7 @@ class CrossAttentionS2T(nn.Module):
         self.scale = head_dim ** -0.5
         all_head_dim = head_dim * self.num_head
         self.clip_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
+        # self.clip_space_pos = nn.Parameter(self.scale * torch.randn((256, dim)))
         self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((196, dim)))
         
 
@@ -239,6 +240,8 @@ class CrossAttentionT2S(nn.Module):
         all_head_dim = head_dim * self.num_head
         self.clip_time_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
         self.vmae_time_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim)))
+        # self.clip_time_pos = nn.Parameter(self.scale * torch.randn((2048, dim)))
+        # self.vmae_time_pos = nn.Parameter(self.scale * torch.randn((1568, dim)))
         
         self.t2s_q = nn.Linear(dim, all_head_dim, bias=False) # 197 tokens(cls+patch) * num_frames
         self.t2s_q_bias = nn.Parameter(torch.zeros(all_head_dim))
@@ -254,8 +257,10 @@ class CrossAttentionT2S(nn.Module):
         t = s_x.shape[1] // t_x.shape[0]
         s_x_cls, s_x_pat = s_x[0, :, :], s_x[1:, :, :]
         s_x_pat = rearrange(s_x_pat, 'n (b t) d -> (b n) t d', b=B) # batch -> token
+        # s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', b=B) # batch -> token
         s_x_pat = s_x_pat + self.clip_time_pos
         t_x = rearrange(t_x, 'b (t n) d -> (b n) t d', t=t)
+        # t_x = rearrange(t_x, 'b (t n) d -> b (n t) d', t=t)
         t_x = t_x + self.vmae_time_pos
         t2s_q_bias = self.t2s_q_bias
         t2s_kv_bias = self.t2s_kv_bias
@@ -275,6 +280,7 @@ class CrossAttentionT2S(nn.Module):
         s_x_pat = rearrange(s_x_pat, 'b h n d -> b n (h d)')
         s_x_pat = self.t2s_proj(s_x_pat)
         s_x_pat = rearrange(s_x_pat,'(b n) t d -> n (b t) d', b=B)
+        # s_x_pat = rearrange(s_x_pat,'b (n t) d -> n (b t) d', t=self.num_frames//2)
         s_x = torch.cat([s_x_cls.unsqueeze(0), s_x_pat], dim=0)
         return s_x
 
@@ -411,6 +417,7 @@ class STCrossTransformer(nn.Module):
     def __init__(self, 
                  img_size=224, 
                  patch_size=16, 
+                 vmae_patch_size=None,
                  in_chans=3, 
                  num_classes=1000, 
                  embed_dim=768, 
@@ -453,9 +460,9 @@ class STCrossTransformer(nn.Module):
         # =================================================================
         CA = [i for i in range(CA, depth)]
         # =================================================================
-        
+        self.vmae_patch_size = vmae_patch_size if vmae_patch_size is not None else patch_size
         self.patch_embed = PatchEmbed(
-            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim, num_frames=all_frames, tubelet_size=self.tubelet_size)
+            img_size=img_size, patch_size=self.vmae_patch_size, in_chans=in_chans, embed_dim=embed_dim, num_frames=all_frames, tubelet_size=self.tubelet_size)
         num_patches = self.patch_embed.num_patches
         
         scale = embed_dim ** -0.5
@@ -645,7 +652,31 @@ def compo_audio_vit_base_patch16_224(pretrained=False, **kwargs):
     return model
 
 @register_model
-def compo_bidir_vit_late_fusion_patch16_224(pretrained=False, **kwargs):
+def compo_bidir_vit_late_fusion1_18_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=18, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_late_fusion2_18_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=18, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=True, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_late_fusion3_18_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=18, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=False, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_late_fusion1_15_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), 
@@ -653,17 +684,23 @@ def compo_bidir_vit_late_fusion_patch16_224(pretrained=False, **kwargs):
     return model
 
 @register_model
-def compo_bidir_vit_late_fusion2_patch16_224(pretrained=False, **kwargs):
+def compo_bidir_vit_late_fusion3_21_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
-        patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        patch_size=16, embed_dim=768, depth=21, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), 
-        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=True, **kwargs)
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=False, **kwargs)
     return model
 
 @register_model
-def compo_bidir_vit_late_fusion3_patch16_224(pretrained=False, **kwargs):
+def bidir_vit_large_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
-        patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
-        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=False, **kwargs)
+        patch_size=14, vmae_patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_large_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=14, vmae_patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
     return model

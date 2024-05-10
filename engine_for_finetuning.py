@@ -12,11 +12,11 @@ from einops import rearrange
 import random
 import pandas as pd
 
-def train_class_batch(model, samples, target, criterion, captions=None, spec=None):
+def train_class_batch(model, samples, target, criterion, captions=None, spec=None, idx=None):
     if captions is not None:
         outputs = model(samples, caption=captions)
     elif spec is not None:
-        outputs = model(samples, spec=spec)
+        outputs = model(samples, spec=spec, idx=idx)
     else:
         outputs = model(samples)
         
@@ -51,7 +51,7 @@ def train_one_epoch(args,model: torch.nn.Module, criterion: torch.nn.Module,
         model.micro_steps = 0
     else:
         optimizer.zero_grad()
-    for data_iter_step, (samples, targets, ids, spec, captions) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, targets, ids, spec, captions, idx) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
             continue
@@ -82,7 +82,7 @@ def train_one_epoch(args,model: torch.nn.Module, criterion: torch.nn.Module,
         if loss_scaler is None:
             samples = samples.half()            
             loss, output = train_class_batch(
-                model, samples, targets, criterion, captions=captions, spec=spec)
+                model, samples, targets, criterion, captions=captions, spec=spec, idx=idx)
         else:
             with torch.cuda.amp.autocast():
                 samples = samples.half() 
@@ -194,7 +194,10 @@ def validation_one_epoch(args,data_loader, model, device):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(videos, caption=captions, spec=spec)
+            if not args.time_encoding:
+                output = model(videos, caption=captions, spec=spec)
+            else:
+                output = model(videos, caption=captions, spec=spec, idx=batch[5])
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
@@ -294,7 +297,10 @@ def final_test(args,data_loader, model, device, file):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(videos, caption=captions, spec=spec)
+            if not args.time_encoding:
+                output = model(videos, caption=captions, spec=spec)
+            else:
+                output = model(videos, caption=captions, spec=spec, idx=batch[7])
             loss = criterion(output, target)
 
         for i in range(output.size(0)):

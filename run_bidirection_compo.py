@@ -239,6 +239,7 @@ def get_args():
                         type=str, help='bcast_method')
     parser.add_argument('--process_type', type=str,default='ast')
     parser.add_argument('--ucf101_type', type=str, default='1')
+    parser.add_argument('--time_encoding', action='store_true', default=False)
     
     
     
@@ -400,6 +401,9 @@ def main(args, ds_init):
     if args.bcast_method is not None:
         print(f"bcast_method = {args.bcast_method}")
         model_args['bcast_method'] = args.bcast_method
+    if args.time_encoding:
+        model_args['time_encoding'] = args.time_encoding
+        model_args['spec_shape'] = [args.audio_height//args.window_size, args.audio_width//args.window_size]
     model = create_model(**model_args)
     
     freeze_list = freeze_block_list(model,args.unfreeze_layers)

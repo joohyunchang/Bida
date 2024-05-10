@@ -12,14 +12,14 @@ from einops import rearrange
 import random
 import pandas as pd
 
-def composition_train_class_batch(model, samples, target_noun, target_verb, criterion, actionlist=None, captions=None, spec=None):
+def composition_train_class_batch(model, samples, target_noun, target_verb, criterion, actionlist=None, captions=None, spec=None, idx=None):
     if actionlist is not None:
         captions = [actionlist[300*v.argmax()+n.argmax()] for n, v in zip(target_noun, target_verb)]
         outputs_noun, outputs_verb = model(samples, captions)
     elif captions is not None:
         outputs_noun, outputs_verb = model(samples, captions)
     elif spec is not None:
-        outputs_noun, outputs_verb = model(samples, spec=spec)
+        outputs_noun, outputs_verb = model(samples, spec=spec, idx=idx)
     else:
         outputs_noun, outputs_verb = model(samples)
     loss_noun = criterion(outputs_noun, target_noun)
@@ -56,7 +56,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         model.micro_steps = 0
     else:
         optimizer.zero_grad()
-    for data_iter_step, (samples, targets, ids, spec, captions) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, targets, ids, spec, captions, idx) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
             continue
@@ -80,6 +80,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
             spec = None
         action_target = (targets[:,1] * 1000) + targets[:,0]
         batch_size = samples.shape[0]
+        # idxs = [idx[:,:-samples.shape[2]], idx[:,-samples.shape[2]:]]
 
         if mixup_fn is not None:
             samples, target_noun, target_verb = mixup_fn(samples, targets[:,:2])
@@ -89,7 +90,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         if loss_scaler is None:
             samples = samples.half()
             loss, loss_noun, loss_verb, outputs_noun, outputs_verb = composition_train_class_batch(
-                model, samples, target_noun, target_verb, criterion, actionlist=actionlist, captions=captions, spec=spec)
+                model, samples, target_noun, target_verb, criterion, actionlist=actionlist, captions=captions, spec=spec, idx=idx)
         else:
             with torch.cuda.amp.autocast():
                 samples = samples.half()
@@ -213,7 +214,10 @@ def validation_one_epoch(args, data_loader, model, device):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output_noun, output_verb = model(samples, caption=captions, spec=spec)
+            if not args.time_encoding:
+                output_noun, output_verb = model(samples, caption=captions, spec=spec)
+            else:
+                output_noun, output_verb = model(samples, caption=captions, spec=spec, idx=batch[5])
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])
             
@@ -274,7 +278,10 @@ def final_test(args, data_loader, model, device, file):
         
         # compute output
         with torch.cuda.amp.autocast():
-            output_noun, output_verb = model(samples, caption=captions, spec=spec)
+            if not args.time_encoding:
+                output_noun, output_verb = model(samples, caption=captions, spec=spec)
+            else:
+                output_noun, output_verb = model(samples, caption=captions, spec=spec, idx=batch[7])
             loss_noun = criterion(output_noun, target[:,0])
             loss_verb = criterion(output_verb, target[:,1])
 

@@ -229,6 +229,7 @@ def get_args():
     parser.add_argument('--class_narration', action='store_true', default=False)
     parser.add_argument('--audio_type', default='all8', choices=['all','all8','frame','stack','stacks','single','onespec','single1024','stackss','single1024s'],
                         type=str, help='audio_trim_type')
+    parser.add_argument('--time_encoding', action='store_true', default=False)
     
     
     

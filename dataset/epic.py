@@ -105,6 +105,7 @@ class EpicVideoClsDataset(Dataset):
                # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
                caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
                
+               idx, all_idx = np.zeros(0), np.zeros(0)
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'../spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
@@ -122,7 +123,7 @@ class EpicVideoClsDataset(Dataset):
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          try:
-                              spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=random.random(), audio_type=self.audio_type, data_set=self.data_set, mode=self.mode)
+                              spec, idx = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=random.random(), audio_type=self.audio_type, data_set=self.data_set, mode=self.mode, return_index=True)
                               if not self.realtime_audio and self.autosave_spec:
                                    try:
                                         save_spec = spec[0].detach()
@@ -141,14 +142,14 @@ class EpicVideoClsDataset(Dataset):
                sample = os.path.join(self.data_path, sample)
                if self.disable_video:
                     return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
-               buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
+               buffer, all_idx = self.loadvideo_decord(sample, sample_rate_scale=scale_t, return_index=True) # T H W C
                
                if len(buffer) == 0:
                     while len(buffer) == 0:
                          warnings.warn("video {} not correctly loaded during training".format(sample))
                          index = np.random.randint(self.__len__())
                          sample = self.dataset_samples[index]
-                         buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t)
+                         buffer, all_idx = self.loadvideo_decord(sample, sample_rate_scale=scale_t, return_index=True)
                          
                if args.num_sample > 1:
                     frame_list = []
@@ -163,7 +164,8 @@ class EpicVideoClsDataset(Dataset):
                     return frame_list, label_list, index_list, {}
                else:
                     buffer = self._aug_frame(buffer, args)
-               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+               all_idx = np.concatenate((idx, all_idx))
+               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
           
           elif self.mode == 'validation':
                # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
@@ -181,7 +183,7 @@ class EpicVideoClsDataset(Dataset):
                          audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + '.wav')
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
-                         spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, data_set=self.data_set)
+                         spec, idx = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, data_set=self.data_set, return_index=True)
                          if not self.realtime_audio and self.autosave_spec:
                               try:
                                    save_spec = spec[0]
@@ -195,16 +197,17 @@ class EpicVideoClsDataset(Dataset):
                sample = os.path.join(self.data_path, sample)
                if self.disable_video:
                     return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
-               buffer = self.loadvideo_decord(sample)
+               buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
                
                if len(buffer) == 0:
                     while len(buffer) == 0:
                          warnings.warn("video {} not correctly loaded during validation".format(sample))
                          index = np.random.randint(self.__len__())
                          sample = self.dataset_samples[index]
-                         buffer = self.loadvideo_decord(sample)
+                         buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
                buffer = self.data_transform(buffer)
-               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+               all_idx = np.concatenate((idx, all_idx))
+               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
           
           elif self.mode == 'test':
                # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
@@ -223,14 +226,14 @@ class EpicVideoClsDataset(Dataset):
                          start_frame = self.audio_samples[self.test_dataset[index]]['start_frame']
                          end_frame = self.audio_samples[self.test_dataset[index]]['stop_frame']
                          # (2*chunk_nb+1)/(self.test_num_segment * 2)
-                         spec = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set)
+                         spec, idx = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set, return_index=True)
                else:
                     spec = {}
                
                sample = self.test_dataset[index] + '.mp4'
                sample = os.path.join(self.data_path, sample)
                chunk_nb, split_nb = self.test_seg[index]
-               buffer = self.loadvideo_decord(sample)
+               buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
 
                while len(buffer) == 0:
                     warnings.warn("video {}, temporal {}, spatial {} not found during testing".format(\
@@ -238,7 +241,7 @@ class EpicVideoClsDataset(Dataset):
                     index = np.random.randint(self.__len__())
                     sample = self.test_dataset[index]
                     chunk_nb, split_nb = self.test_seg[index]
-                    buffer = self.loadvideo_decord(sample)
+                    buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
 
                buffer = self.data_resize(buffer)
                if isinstance(buffer, list):
@@ -252,6 +255,7 @@ class EpicVideoClsDataset(Dataset):
                     spatial_step = 1.0 * (max( buffer.shape[1], buffer.shape[2]) - self.short_side_size) \
                                         / (self.test_num_crop - 1)
                temporal_start = chunk_nb # 0/1
+               all_idx = all_idx[temporal_start::2]
                spatial_start = int(split_nb * spatial_step)
                if buffer.shape[1] >= buffer.shape[2]:
                     buffer = buffer[temporal_start::2, \
@@ -261,8 +265,9 @@ class EpicVideoClsDataset(Dataset):
                          :, spatial_start:spatial_start + self.short_side_size, :]
 
                buffer = self.data_transform(buffer)
+               all_idx = np.concatenate((idx, all_idx))
                return buffer, self.test_label_array[index], sample.split("/")[-1].split(".")[0], \
-                    chunk_nb, split_nb, spec, caption
+                    chunk_nb, split_nb, spec, caption, all_idx
           else:
                raise NameError('mode {} unkown'.format(self.mode))
                
@@ -325,7 +330,7 @@ class EpicVideoClsDataset(Dataset):
 
           return buffer
 
-     def loadvideo_decord(self, sample, sample_rate_scale=1):
+     def loadvideo_decord(self, sample, sample_rate_scale=1, return_index=False):
           """Load video content using Decord"""
           fname = sample
 
@@ -356,6 +361,8 @@ class EpicVideoClsDataset(Dataset):
                all_index = list(np.sort(np.array(all_index))) 
                vr.seek(0)
                buffer = vr.get_batch(all_index).asnumpy()
+               if return_index:
+                    return buffer, np.array([idx/vr.get_avg_fps() for idx in all_index])
                return buffer
 
           # handle temporal segments
@@ -371,6 +378,8 @@ class EpicVideoClsDataset(Dataset):
           all_index = list(np.array(all_index)) 
           vr.seek(0)
           buffer = vr.get_batch(all_index).asnumpy()
+          if return_index:
+               return buffer, np.array([idx/vr.get_avg_fps() for idx in all_index])
           return buffer
 
      def __len__(self):

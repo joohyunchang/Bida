@@ -194,7 +194,7 @@ class Spectrogram:
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         return spec
         
-    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', audio_centra=1/2, mode=None, data_set='EPIC', extract=False, device='cpu', use_all_wav=False):
+    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', audio_centra=1/2, mode=None, data_set='EPIC', extract=False, device='cpu', use_all_wav=False,return_index=False):
         if isinstance(sample, str):
             samples, sample_rate = torchaudio.load(sample)
             if samples.shape[0] != 1:
@@ -304,10 +304,13 @@ class Spectrogram:
             trim_right = centra + (length -length//2)
             if trim_left < 0:
                 samples = samples[:length]
+                idx = [0,length/sample_rate]
             elif trim_right > samples.shape[-1]:
                 samples = samples[-length:]
+                idx = [(trim_right-length)/sample_rate,trim_right/sample_rate]
             else:
                 samples = samples[trim_left:trim_right]
+                idx = [trim_left/sample_rate, trim_right/sample_rate]
             spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         elif audio_type == 'onespec':
@@ -320,6 +323,8 @@ class Spectrogram:
             # spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
             # spec = spec.unsqueeze(0).unsqueeze(0).expand(3, 16, -1, -1)
+        if return_index:
+            return spec, idx
         return spec
     
 def save_spectrogram_npy(audio_name, spec, use_try=False):

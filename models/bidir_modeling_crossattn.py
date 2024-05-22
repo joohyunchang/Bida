@@ -304,7 +304,7 @@ class Block(nn.Module):
         self.CA = CA
         self.use_SA, self.use_MLP = True, True
         if num_layer >= late_fusion:
-            self.use_Adapter = True
+            self.use_Adapter = False
             self.use_SA, self.use_MLP = use_SA, use_MLP
         ###################################### MHSA code #####################################
         ############################ AIM MHSA ###########################
@@ -681,6 +681,22 @@ def compo_bidir_vit_late_fusion1_15_patch16_224(pretrained=False, **kwargs):
         patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), 
         composition=True, late_fusion=12, CA=12, use_Adapter=False, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_late_fusion2_15_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=True, **kwargs)
+    return model
+
+@register_model
+def compo_bidir_vit_late_fusion3_15_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=15, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        composition=True, late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=False, **kwargs)
     return model
 
 @register_model

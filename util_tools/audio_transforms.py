@@ -76,6 +76,7 @@ class Spectrogram:
             if self.specnorm:
                 spec = (spec - fbank_mean) / (2 * fbank_std)
             self.length = (spec.shape[-2] // 16) * 16 if self.free_length else self.length 
+            ratio = self.length/spec.shape[-2]
             if self.log:
                 print('원래', spec.shape)
             if spec.shape[-2] != self.length:
@@ -114,6 +115,7 @@ class Spectrogram:
                 # spec = (spec - fbank_mean) / (2 * fbank_std)
                 # spec = (spec - (-23)) / (2 * 13.5)  # EK100
                 pass
+            ratio = self.length/spec.shape[-2]
             if self.log:
                 print('원래', spec.shape)
             if spec.shape[-2] != self.length:
@@ -127,6 +129,7 @@ class Spectrogram:
             if self.specnorm:
                 spec = (spec - (-23)) / (2 * 13.5)  # EK100
                 # spec = (spec - (-20.5)) / (2 * 26.5) # K400
+            ratio = self.length/spec.shape[-1]
             if self.log:
                 print('원래', spec.shape)
             if spec.shape[-1] != self.length:
@@ -137,7 +140,7 @@ class Spectrogram:
                 else:
                     # spec = spec[:,:self.length] if spec.shape[-1] > self.length else torch.concat([spec,spec[:,-expand:]],dim=-1)
                     spec = spec[:,:self.length] if spec.shape[-1] > self.length else  torch.nn.functional.pad(spec, pad=(0, expand, 0, 0))
-        return spec
+        return spec, ratio
 
     # https://arxiv.org/abs/1904.08779
     def spec_augment(self, feat, T = 70, F = 20, time_mask_num = 2, freq_mask_num = 2):
@@ -236,7 +239,7 @@ class Spectrogram:
             else:
                 samples = samples[left_sample:right_sample:stride]
                 samples = samples[:length]
-            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            spec, ratio = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1) if audio_type == 'stack' else spec.unsqueeze(0).repeat(3, 1, 1)
         elif audio_type == 'frame':
             average_duration = (stop_frame - start_frame) // self.num_segment
@@ -260,18 +263,18 @@ class Spectrogram:
                 else:
                         spec.append(samples[left_sample:right_sample])
             spec = torch.stack(spec, dim=0)
-            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec).unsqueeze(0).repeat(3,1,1,1)
+            spec, ratio = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec).unsqueeze(0).repeat(3,1,1,1)
         elif audio_type == 'all':
             if right_sample > len(samples):
                 right_sample = len(samples)
             step = int((right_sample-left_sample)//self.num_segment)
             samples = torch.stack([samples[i:i+step] for i in range(left_sample,right_sample,step)],dim=0)
-            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            spec, ratio = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
         elif audio_type == 'all8':
             step = step = int((right_sample-left_sample)//(self.num_segment/2))
             samples = torch.stack([samples[i:i+step] for i in range(left_sample,right_sample,step)],dim=0)
-            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            spec, ratio = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
             spec = spec[:, [i for i in range(8) for _ in range(2)], :, :]
         # elif audio_type in ['stacks','single','single1024','stackss','single1024s','singles'] or ('beats' in audio_type and audio_type != 'beats_free'):
@@ -290,7 +293,7 @@ class Spectrogram:
             stack_dim = samples.shape[0]
             if not audio_type in ['stacks','stackss']:
                 samples = samples[(stack_dim-1)//2, :]
-            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            spec, ratio = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             if audio_type in ['stacks','stackss']:
                 spec = spec.unsqueeze(0).repeat(3, 1, 1, 1)
                 idx = np.round(np.linspace(0, stack_dim - 1, self.num_segment)).astype(int).tolist()
@@ -311,15 +314,20 @@ class Spectrogram:
             else:
                 samples = samples[trim_left:trim_right]
                 idx = [trim_left/sample_rate, trim_right/sample_rate]
-            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            spec, ratio = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            if self.log:
+                print('이전 idx :', idx)
+            idx = [idx[0],ratio*(idx[1]-idx[0])+idx[0]]
+            if self.log:
+                print('이후 idx :', idx,)
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         elif audio_type == 'onespec':
             samples = samples[left_sample:right_sample]
-            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            spec, ratio = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         else:
             samples = samples[left_sample:right_sample]
-            spec = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
+            spec, ratio = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec)
             # spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
             # spec = spec.unsqueeze(0).unsqueeze(0).expand(3, 16, -1, -1)

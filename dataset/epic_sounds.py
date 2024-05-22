@@ -93,13 +93,13 @@ class EpicSoundsVideoClsDataset(Dataset):
                               self.test_seg.append((ck, cp))
                               
      def __getitem__(self, index):
+          idx, all_idx = np.zeros(0), np.zeros(0)
           if self.mode == 'train':
                args = self.args
                scale_t = 1
                # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
                caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
                
-               idx, all_idx = np.zeros(0), np.zeros(0)
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'../spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
@@ -373,6 +373,9 @@ class EpicSoundsVideoClsDataset(Dataset):
                return len(self.dataset_samples)
           else:
                return len(self.test_dataset)
+          
+     def get_item_by_index(self, index):
+        return self.__getitem__(index)
           
 
 def spatial_sampling(

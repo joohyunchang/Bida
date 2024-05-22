@@ -396,6 +396,9 @@ class K400VidAudClsDataset(Dataset):
             return len(self.dataset_samples)
         else:
             return len(self.test_dataset)
+        
+    def get_item_by_index(self, index):
+        return self.__getitem__(index)
 
 
 def spatial_sampling(

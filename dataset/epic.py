@@ -99,13 +99,13 @@ class EpicVideoClsDataset(Dataset):
                               self.test_seg.append((ck, cp))
                               
      def __getitem__(self, index):
+          idx, all_idx = np.zeros(0), np.zeros(0)
           if self.mode == 'train':
                args = self.args
                scale_t = 1
                # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
                caption = random.choice(self.narration_array[self.dataset_samples[index]]) if self.narration_array is not None else None
                
-               idx, all_idx = np.zeros(0), np.zeros(0)
                if self.audio_path is not None:
                     audio_trim_path = os.path.join(self.audio_path,'../spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
@@ -335,11 +335,15 @@ class EpicVideoClsDataset(Dataset):
           fname = sample
 
           if not (os.path.exists(fname)):
+               if return_index:
+                    return [], []
                return []
 
           # avoid hanging issue
           if os.path.getsize(fname) < 1 * 1024:
                print('SKIP: ', fname, " - ", os.path.getsize(fname))
+               if return_index:
+                    return [], []
                return []
           try:
                if self.keep_aspect_ratio:
@@ -349,6 +353,8 @@ class EpicVideoClsDataset(Dataset):
                                    num_threads=1, ctx=cpu(0))
           except:
                print("video cannot be loaded by decord: ", fname)
+               if return_index:
+                    return [], []
                return []
           
           if self.mode == 'test':
@@ -387,6 +393,9 @@ class EpicVideoClsDataset(Dataset):
                return len(self.dataset_samples)
           else:
                return len(self.test_dataset)
+          
+     def get_item_by_index(self, index):
+        return self.__getitem__(index)
           
 
 def spatial_sampling(

@@ -97,6 +97,7 @@ class UCF101VidAudClsDataset(Dataset):
                         self.test_seg.append((ck, cp))
 
     def __getitem__(self, index):
+        idx, all_idx = np.zeros(0), np.zeros(0)
         if self.mode == 'train':
             args = self.args 
             scale_t = 1
@@ -369,6 +370,9 @@ class UCF101VidAudClsDataset(Dataset):
             return len(self.dataset_samples)
         else:
             return len(self.test_dataset)
+        
+    def get_item_by_index(self, index):
+        return self.__getitem__(index)
 
 
 def spatial_sampling(

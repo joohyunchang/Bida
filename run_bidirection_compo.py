@@ -31,7 +31,9 @@ import models.cast_bisquare
 import models.cast_Bsquare
 import models.AIM_cls
 import models.audio_cast
+import models.audio_only
 import models.audio_clip_cast
+import models.ast_clip_cast
 import models.beats_clip_cast
 import models.beats_Bsquare
 from models.prompt import text_prompt
@@ -240,6 +242,9 @@ def get_args():
     parser.add_argument('--process_type', type=str,default='ast')
     parser.add_argument('--ucf101_type', type=str, default='1')
     parser.add_argument('--time_encoding', action='store_true', default=False)
+    parser.add_argument('--disable_video', action='store_true', default=False)
+    parser.add_argument('--audio_only_finetune',default=None, help='finetune from clip checkpoint')
+    parser.add_argument('--ast_finetune',default=None, help='finetune from clip checkpoint')
     
     
     
@@ -404,7 +409,11 @@ def main(args, ds_init):
     if args.time_encoding:
         model_args['time_encoding'] = args.time_encoding
         model_args['spec_shape'] = [args.audio_height//args.window_size, args.audio_width//args.window_size]
+    if args.audio_only_finetune:
+        model_args['audio_only_finetune'] = True
     model = create_model(**model_args)
+    before_n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('Before Freeze number of params:', before_n_parameters)
     
     freeze_list = freeze_block_list(model,args.unfreeze_layers)
     if args.fine_tune is not None:
@@ -412,6 +421,18 @@ def main(args, ds_init):
     else:
         load_bidir_weights(model, args, freeze_list=freeze_list)
     
+    # if args.audio_only_finetune is not None:
+    #     audio_key = torch.load(args.audio_only_finetune, map_location='cpu')['module']
+    #     for k in ['head.weight', 'head.bias', 'head_noun.weight', 'head_noun.bias', 'head_verb.weight', 'head_verb.bias', 'audio_ln_post.weight' 'audio_ln_post.bias']:
+    #         if k in audio_key:
+    #             del audio_key[k]
+    #     modified_data = OrderedDict()
+    #     for key, value in audio_key.items():
+    #         new_key = key.replace('clip', 'audio')
+    #         modified_data[new_key] = value
+    #     audio_key = modified_data
+    #     model.load_state_dict(audio_key, strict=False)
+        
     ###### VMAE 검증을 위해 freeze는 잠시 꺼둔다 #############
     if args.unfreeze_layers is not None:
         model, unfreeze_list = unfreeze_block(model,args.unfreeze_layers)
@@ -420,6 +441,7 @@ def main(args, ds_init):
     #     model.clip_patch_embed.weight.copy_(model.patch_embed.proj.weight)
     #     model.clip_patch_embed.bias.copy_(model.patch_embed.proj.bias)
     #     print("patch_embed_initialize")
+
     
     model.to(device)
     

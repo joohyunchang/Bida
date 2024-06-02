@@ -42,7 +42,7 @@ class K400VidAudClsDataset(Dataset):
         self.args = args
         self.aug = False
         self.rand_erase = False
-        self.disable_video = False
+        self.disable_video = args.disable_video
         if self.mode in ['train']:
             self.aug = True
             if self.args.reprob > 0:
@@ -128,7 +128,7 @@ class K400VidAudClsDataset(Dataset):
             sample = self.dataset_samples[index] + '.mp4'
             sample = os.path.join(self.data_path, 'train', sample)
             if self.disable_video:
-                return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+                return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
             buffer, all_idx = self.loadvideo_decord(sample, sample_rate_scale=scale_t, return_index=True) # T H W C
             if len(buffer) == 0:
                 sample = os.path.join(self.audio_path, 'video', self.dataset_samples[index] + '.mp4')
@@ -183,7 +183,7 @@ class K400VidAudClsDataset(Dataset):
             sample = self.dataset_samples[index] + '.mp4'
             sample = os.path.join(self.data_path, 'test', sample)
             if self.disable_video:
-                return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+                return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
             
             buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             if len(buffer) == 0:
@@ -227,6 +227,9 @@ class K400VidAudClsDataset(Dataset):
             sample = os.path.join(self.data_path, 'test', sample)
             chunk_nb, split_nb = self.test_seg[index]
             buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
+            if self.disable_video:
+                return torch.tensor([1]), self.test_label_array[index], sample.split("/")[-1].split(".")[0], chunk_nb, split_nb, spec, caption, all_idx
+
             if len(buffer) == 0:
                 sample = sample.replace("kinetics400_resized", "kinetics400_resizeds")
                 buffer, all_idx = self.loadvideo_decord(sample, return_index=True)

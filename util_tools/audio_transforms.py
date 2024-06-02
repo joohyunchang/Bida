@@ -18,17 +18,17 @@ class Spectrogram:
         self.specnorm = specnorm
         self.log = log
 
-        # torchaudio를 사용한 스펙트로그램 계산
-        # self.spectrogram = torch.nn.Sequential(
-        #      torchaudio.transforms.Spectrogram(
-        #           n_fft=447,
-        #           win_length=nperseg,
-        #           hop_length=noverlap,
-        #           window_fn=torch.hann_window
-        #      ),
-        #      torchaudio.transforms.AmplitudeToDB()
-        # )
-        if process_type == 'beats':
+        if process_type == 'ast':
+            self.melbins = n_mels
+            self.freqm = 0
+            self.timem = 0
+            self.mixup = 0
+            self.norm_mean = -4.2677393
+            self.norm_std = 4.5689974
+            self.length = length
+            # self.sec = length * 0.004995535714 * weight
+            self.sec = length * 0.102
+        elif process_type == 'beats':
             self.sec = length * 0.0102 * weight
             self.n_mels = n_mels
             self.length = length
@@ -55,13 +55,45 @@ class Spectrogram:
         noise = torch.randn(audio.shape)
         return audio + noise_level * noise
         
-    def _specgram(self, audio, window_size=10, step_size=5, eps=1e-6, resampling_rate=24000, target_length=1.119, fbank_mean: float = 15.41663, fbank_std: float = 6.55582):
+    def _specgram(self, audio, window_size=10, step_size=5, eps=1e-6, resampling_rate=24000, target_length=1.119, fbank_mean: float = 15.41663, fbank_std: float = 6.55582, audio_centra=0):
         # current_length = audio.shape[-1] / resampling_rate
         # if current_length != target_length:
         #     new_freq = int(round(resampling_rate * target_length / current_length/100) * 100)
         #     resample_transform = torchaudio.transforms.Resample(orig_freq=resampling_rate, new_freq=new_freq)
         #     audio = resample_transform(audio)
-        if self.process_type == 'beats':
+        if self.process_type == 'ast':
+            waveform, sr = audio.unsqueeze(0), resampling_rate
+            waveform = waveform - waveform.mean()
+            fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=sr, use_energy=False,
+                                                  window_type='hanning', num_mel_bins=self.melbins, dither=0.0, frame_shift=10)
+
+            n_frames = fbank.shape[0]
+
+            p = self.length - n_frames
+            ratio = self.length/fbank.shape[-2]
+            # cut and pad
+            if self.log:
+                print('원래', fbank.shape, p)
+            start_f, end_f = 0, self.length
+            if p > 0:
+                m = torch.nn.ZeroPad2d((0, 0, 0, p))
+                fbank = m(fbank)
+            elif p < 0:
+                gap = int(p * (1-audio_centra))
+                start_f =n_frames+gap-self.length
+                end_f = n_frames+gap
+                if start_f < 0:
+                    start_f, end_f = 0, self.length
+                if end_f > n_frames:
+                    start_f, end_f = n_frames-self.length, n_frames
+                fbank = fbank[start_f:end_f, :]
+            if self.specnorm:
+                fbank = (fbank - self.norm_mean) / (self.norm_std * 2)
+            if False == True:
+                fbank = fbank + torch.rand(fbank.shape[0], fbank.shape[1]) * np.random.rand() / 10
+                fbank = torch.roll(fbank, np.random.randint(-10, 10), 0)
+            return fbank, start_f/n_frames, end_f/n_frames
+        elif self.process_type == 'beats':
             fbanks = []
             dim = audio.dim()
             audio = audio.unsqueeze(0) if audio.dim() == 1 else audio
@@ -227,6 +259,19 @@ class Spectrogram:
             right_sample = len(samples)
         length_sample = right_sample - left_sample
         length = int(round(self.sec*sample_rate))
+        if self.process_type == 'ast':
+            samples = samples[left_sample:right_sample]
+            idx = [0, len(samples)/sample_rate]
+            spec, start_f, end_f = self._specgram(samples, resampling_rate=sample_rate, target_length=self.sec, audio_centra=audio_centra)
+            if self.log:
+                print('이전 idx :', idx)
+            idx = [idx[1]*start_f,idx[1]*end_f]
+            if self.log:
+                print('이후 idx :', idx,)
+            spec = spec.unsqueeze(0).repeat(3, 1, 1)
+            if return_index:
+                return spec, idx
+            return spec
         if audio_type in ['stack']:
             stride = int(length_sample // length)
             if stride == 0:

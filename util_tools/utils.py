@@ -469,6 +469,33 @@ def load_bidir_weights(model, args, freeze_list=None):
         prompt = torch.load(args.prompt_weight, map_location='cpu')
         keys = prompt['module']
         new_dict['prompt_embedding.weight'] = keys['prompt_embedding.weight']
+    
+    if args.ast_finetune is not None:
+        ast_key = torch.load(args.ast_finetune, map_location='cpu')
+        for k in ['head.weight', 'head.bias', 'head_dist.weight', 'head_dist.bias']:
+            if k in ast_key:
+                del ast_key[k]
+        for key, value in ast_key.items():
+            if key.startswith('module.v.'):
+                if key.startswith('module.v.blocks.'):
+                    new_key = key.replace('module.v.', '')
+                    if new_key[8] == '.':
+                        new_dict[new_key[:9] + 'ast_' + new_key[9:]] = value
+                    else:
+                        new_dict[new_key[:10] + 'ast_' + new_key[10:]] = value
+                else:
+                    new_key = key.replace('module.v.', 'ast_')
+                    new_dict[new_key] = value
+                    
+    
+    if args.audio_only_finetune is not None:
+        audio_key = torch.load(args.audio_only_finetune, map_location='cpu')['module']
+        for k in ['head.weight', 'head.bias', 'head_noun.weight', 'head_noun.bias', 'head_verb.weight', 'head_verb.bias', 'audio_ln_post.weight' 'audio_ln_post.bias']:
+            if k in audio_key:
+                del audio_key[k]
+        for key, value in audio_key.items():
+            new_key = key.replace('clip', 'audio')
+            new_dict[new_key] = value
             
     # load로 불러온 pre-trained weight를 new_dict에 담아주고
     checkpoint_model = new_dict
@@ -1006,7 +1033,7 @@ def unfreeze_block(model, block_list):
     unfreeze_list = []
     for name, param in model.named_parameters():
         for block in block_list:#if block in block_list
-            if block in name:
+            if block in name or 'ALLIN' in block_list:
                 param.requires_grad = True
                 unfreeze_list.append(name)
                 break
@@ -1017,7 +1044,10 @@ def unfreeze_block(model, block_list):
 def freeze_block_list(model, block_list):
     freeze_list = []
     for name, param in model.named_parameters():
-        should_freeze = True
+        if 'ALLIN' in block_list:
+            freeze_list.append(name)
+            continue
+        should_freeze = True 
         for block in block_list:
             if block in name:
                 should_freeze = False

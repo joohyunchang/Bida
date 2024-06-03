@@ -29,6 +29,7 @@ import models.bidir_modeling_crossattn_concat
 import models.cast_square
 import models.cast_bisquare
 import models.cast_Bsquare
+import models.ast_Bsquare
 import models.AIM_cls
 import models.audio_cast
 import models.audio_only
@@ -411,6 +412,9 @@ def main(args, ds_init):
         model_args['spec_shape'] = [args.audio_height//args.window_size, args.audio_width//args.window_size]
     if args.audio_only_finetune:
         model_args['audio_only_finetune'] = True
+    if 'ast' in args.vmae_model:
+        model_args['input_fdim'] = args.audio_height
+        model_args['input_tdim'] = args.audio_width
     model = create_model(**model_args)
     before_n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('Before Freeze number of params:', before_n_parameters)

@@ -487,6 +487,24 @@ def load_bidir_weights(model, args, freeze_list=None):
                     new_key = key.replace('module.v.', 'ast_')
                     new_dict[new_key] = value
                     
+        # f_dim, t_dim = model.get_shape(10, 10, args.audio_width, args.audio_width)
+        # num_patches = f_dim * t_dim
+
+        # new_pos_embed = ast_key['module.v.pos_embed'][:, 2:, :].detach().reshape(1, 1212, 768).transpose(1, 2).reshape(1, 768, 12, 101)
+        # # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding
+        # if t_dim < 101:
+        #     new_pos_embed = new_pos_embed[:, :, :, 50 - int(t_dim/2): 50 - int(t_dim/2) + t_dim]
+        # # otherwise interpolate
+        # else:
+        #     new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(12, t_dim), mode='bilinear')
+        # if f_dim < 12:
+        #     new_pos_embed = new_pos_embed[:, :, 6 - int(f_dim/2): 6 - int(f_dim/2) + f_dim, :]
+        # # otherwise interpolate
+        # elif f_dim > 12:
+        #     new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
+        # new_pos_embed = new_pos_embed.reshape(1, 768, num_patches).transpose(1, 2)
+        # new_dict['ast_pos_embed'] = nn.Parameter(torch.cat([ast_key['module.v.pos_embed'][:, :2, :].detach(), new_pos_embed], dim=1))
+                    
     
     if args.audio_only_finetune is not None:
         audio_key = torch.load(args.audio_only_finetune, map_location='cpu')['module']

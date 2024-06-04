@@ -246,6 +246,7 @@ def get_args():
     parser.add_argument('--disable_video', action='store_true', default=False)
     parser.add_argument('--audio_only_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--ast_finetune',default=None, help='finetune from clip checkpoint')
+    parser.add_argument('--stride', type=int, default=10)
     
     
     
@@ -298,6 +299,8 @@ def main(args, ds_init):
         dataset_val, _ = build_dataset(is_train=False, test_mode=False, args=args)
     dataset_test, _ = build_dataset(is_train=False, test_mode=True, args=args)
     
+    if 'SSAST' in args.ast_finetune:
+        args.stride = 16
 
     num_tasks = utils.get_world_size()
     global_rank = utils.get_rank()
@@ -413,6 +416,8 @@ def main(args, ds_init):
     if args.audio_only_finetune:
         model_args['audio_only_finetune'] = True
     if 'ast' in args.vmae_model:
+        model_args['fstride'] = args.stride
+        model_args['tstride'] = args.stride
         model_args['input_fdim'] = args.audio_height
         model_args['input_tdim'] = args.audio_width
     model = create_model(**model_args)

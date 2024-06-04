@@ -487,23 +487,24 @@ def load_bidir_weights(model, args, freeze_list=None):
                     new_key = key.replace('module.v.', 'ast_')
                     new_dict[new_key] = value
                     
-        # f_dim, t_dim = model.get_shape(10, 10, args.audio_width, args.audio_width)
-        # num_patches = f_dim * t_dim
+        f_dim, t_dim = model.get_shape(args.stride, args.stride, args.audio_height, args.audio_width)
+        num_patches = f_dim * t_dim
+        p_f_dim, p_t_dim = model.get_shape(args.stride, args.stride, 128, 1024)
+        p_num_patches = p_f_dim * p_t_dim
+        original_embedding_dim = ast_key['module.v.pos_embed'].shape[-1]
 
-        # new_pos_embed = ast_key['module.v.pos_embed'][:, 2:, :].detach().reshape(1, 1212, 768).transpose(1, 2).reshape(1, 768, 12, 101)
-        # # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding
-        # if t_dim < 101:
-        #     new_pos_embed = new_pos_embed[:, :, :, 50 - int(t_dim/2): 50 - int(t_dim/2) + t_dim]
-        # # otherwise interpolate
-        # else:
-        #     new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(12, t_dim), mode='bilinear')
-        # if f_dim < 12:
-        #     new_pos_embed = new_pos_embed[:, :, 6 - int(f_dim/2): 6 - int(f_dim/2) + f_dim, :]
-        # # otherwise interpolate
-        # elif f_dim > 12:
-        #     new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
-        # new_pos_embed = new_pos_embed.reshape(1, 768, num_patches).transpose(1, 2)
-        # new_dict['ast_pos_embed'] = nn.Parameter(torch.cat([ast_key['module.v.pos_embed'][:, :2, :].detach(), new_pos_embed], dim=1))
+        new_pos_embed = ast_key['module.v.pos_embed'][:, 2:, :].detach().reshape(1, p_num_patches, original_embedding_dim).transpose(1, 2).reshape(1, original_embedding_dim, p_f_dim, p_t_dim)
+        # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding
+        if t_dim < p_t_dim:
+            new_pos_embed = new_pos_embed[:, :, :, int(p_t_dim/2) - int(t_dim / 2): int(p_t_dim/2) - int(t_dim / 2) + t_dim]
+        else:
+            new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(8, t_dim), mode='bilinear')
+        if f_dim < p_f_dim:
+            new_pos_embed = new_pos_embed[:, :, int(p_f_dim/2) - int(f_dim / 2): int(p_f_dim/2) - int(f_dim / 2) + t_dim, :]
+        else:
+            new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
+        new_pos_embed = new_pos_embed.reshape(1, 768, num_patches).transpose(1, 2)
+        new_dict['ast_pos_embed'] = nn.Parameter(torch.cat([ast_key['module.v.pos_embed'][:, :2, :].detach(), new_pos_embed], dim=1))
                     
     
     if args.audio_only_finetune is not None:

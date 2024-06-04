@@ -164,8 +164,7 @@ class Attention(nn.Module):
 
         s2t_q = s2t_q * self.scale
         attn = (s2t_q @ k.transpose(-2, -1))
-
-        
+                
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
@@ -173,7 +172,6 @@ class Attention(nn.Module):
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
-    
     
 class deit_Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
@@ -201,24 +199,6 @@ class deit_Attention(nn.Module):
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x
-    
-class Block(nn.Module):
-
-    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
-        super().__init__()
-        self.norm1 = norm_layer(dim)
-        self.attn = deit_Attention(dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
-        # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
-        self.drop_path = deit_DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = deit_Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
-
-    def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
 class deit_PatchEmbed(nn.Module):
@@ -506,7 +486,7 @@ class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None, 
                  spec_frames=1, attn_all_frame=True, CA=0, use_Adapter=True, audio_patch=196, use_AIM=False, audio_only=False,
-                 late_fusion=0, use_SA=True, use_MLP=True, time_encoding=False, spec_shape=None, audio_only_finetune=False):
+                 late_fusion=0, use_SA=True, use_MLP=True, time_encoding=False, spec_shape=None):
         super().__init__()
         self.num_layer = num_layer
         self.num_heads = num_heads
@@ -521,7 +501,6 @@ class Block(nn.Module):
         self.use_AIM = use_AIM
         self.use_SA, self.use_MLP = True, True
         self.time_encoding = time_encoding
-        self.audio_only_finetune=audio_only_finetune
         if num_layer >= late_fusion:
             self.use_Adapter = True
             self.use_SA, self.use_MLP = use_SA, use_MLP
@@ -734,7 +713,6 @@ class STCrossTransformer(nn.Module):
         self.audio_patch = audio_patch
         self.spec_shape = spec_shape
         self.video_patch = (img_size // patch_size) ** 2
-        self.audio_only_finetune=audio_only_finetune
         
         scale = embed_dim ** -0.5
         
@@ -758,25 +736,25 @@ class STCrossTransformer(nn.Module):
         self.ast_pos_embed = new_pos_embed
         trunc_normal_(self.ast_pos_embed, std=.02)
         
-        self.original_embedding_dim = self.ast_pos_embed.shape[2]
-        f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
-        num_patches = f_dim * t_dim
-        self.ast_patch_embed.num_patches = num_patches
+        # self.original_embedding_dim = self.ast_pos_embed.shape[2]
+        # f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
+        # num_patches = f_dim * t_dim
+        # self.ast_patch_embed.num_patches = num_patches
         
-        new_pos_embed = self.ast_pos_embed[:, 2:, :].detach().reshape(1, 1212, 768).transpose(1, 2).reshape(1, 768, 12, 101)
-        # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding
-        if t_dim < 101:
-            new_pos_embed = new_pos_embed[:, :, :, 50 - int(t_dim/2): 50 - int(t_dim/2) + t_dim]
-        # otherwise interpolate
-        else:
-            new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(12, t_dim), mode='bilinear')
-        if f_dim < 12:
-            new_pos_embed = new_pos_embed[:, :, 6 - int(f_dim/2): 6 - int(f_dim/2) + f_dim, :]
-        # otherwise interpolate
-        elif f_dim > 12:
-            new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
-        new_pos_embed = new_pos_embed.reshape(1, 768, num_patches).transpose(1, 2)
-        self.ast_pos_embed = nn.Parameter(torch.cat([self.ast_pos_embed[:, :2, :].detach(), new_pos_embed], dim=1))
+        # new_pos_embed = self.ast_pos_embed[:, 2:, :].detach().reshape(1, 1212, 768).transpose(1, 2).reshape(1, 768, 12, 101)
+        # # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding
+        # if t_dim < 101:
+        #     new_pos_embed = new_pos_embed[:, :, :, 50 - int(t_dim/2): 50 - int(t_dim/2) + t_dim]
+        # # otherwise interpolate
+        # else:
+        #     new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(12, t_dim), mode='bilinear')
+        # if f_dim < 12:
+        #     new_pos_embed = new_pos_embed[:, :, 6 - int(f_dim/2): 6 - int(f_dim/2) + f_dim, :]
+        # # otherwise interpolate
+        # elif f_dim > 12:
+        #     new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
+        # new_pos_embed = new_pos_embed.reshape(1, 768, num_patches).transpose(1, 2)
+        # self.ast_pos_embed = nn.Parameter(torch.cat([self.ast_pos_embed[:, :2, :].detach(), new_pos_embed], dim=1))
         self.spec_shape=[f_dim, t_dim]
         self.audio_patch = self.ast_patch_embed.num_patches
         ################################################################
@@ -790,7 +768,7 @@ class STCrossTransformer(nn.Module):
         self.audio_only = audio_only
         self.use_AIM = use_AIM
         if audio_only:
-            self.clip_positional_embedding = self.clip_text_positional_embedding
+            # self.clip_positional_embedding = self.clip_text_positional_embedding
             self.num_frames = 2
             all_frames = 2
         if self.use_AIM:
@@ -833,7 +811,7 @@ class STCrossTransformer(nn.Module):
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
                 init_values=init_values, num_layer=i, spec_frames=spec_frames, attn_all_frame=attn_all_frame, CA=CA, use_Adapter=use_Adapter,late_fusion=late_fusion, use_SA=use_SA, use_MLP=use_MLP,
-                audio_patch=self.audio_patch, use_AIM=use_AIM, audio_only=audio_only, time_encoding=self.time_encoding, spec_shape=spec_shape, audio_only_finetune=self.audio_only_finetune)
+                audio_patch=self.audio_patch, use_AIM=use_AIM, audio_only=audio_only, time_encoding=self.time_encoding, spec_shape=spec_shape)
             for i in range(depth)])
         
         self.audio_ln_post = LayerNorm(embed_dim)
@@ -899,9 +877,10 @@ class STCrossTransformer(nn.Module):
 
     def get_num_layers(self):
         return len(self.blocks)
-    def get_shape(self, fstride, tstride, input_fdim=128, input_tdim=1024):
+    
+    def get_shape(self, fstride, tstride, input_fdim=128, input_tdim=1024, fshape=16, tshape=16):
         test_input = torch.randn(1, 1, input_fdim, input_tdim)
-        test_proj = nn.Conv2d(1, self.original_embedding_dim, kernel_size=(16, 16), stride=(fstride, tstride))
+        test_proj = nn.Conv2d(1, self.original_embedding_dim, kernel_size=(fshape, tshape), stride=(fstride, tstride))
         test_out = test_proj(test_input)
         f_dim = test_out.shape[2]
         t_dim = test_out.shape[3]

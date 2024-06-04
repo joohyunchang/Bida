@@ -1090,25 +1090,25 @@ class STCrossTransformer(nn.Module):
         self.ast_pos_embed = new_pos_embed
         trunc_normal_(self.ast_pos_embed, std=.02)
         
-        self.original_embedding_dim = self.ast_pos_embed.shape[2]
-        f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
-        num_patches = f_dim * t_dim
-        self.ast_patch_embed.num_patches = num_patches
+        # self.original_embedding_dim = self.ast_pos_embed.shape[2]
+        # f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
+        # num_patches = f_dim * t_dim
+        # self.ast_patch_embed.num_patches = num_patches
         
-        new_pos_embed = self.ast_pos_embed[:, 2:, :].detach().reshape(1, 1212, 768).transpose(1, 2).reshape(1, 768, 12, 101)
-        # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding
-        if t_dim < 101:
-            new_pos_embed = new_pos_embed[:, :, :, 50 - int(t_dim/2): 50 - int(t_dim/2) + t_dim]
-        # otherwise interpolate
-        else:
-            new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(12, t_dim), mode='bilinear')
-        if f_dim < 12:
-            new_pos_embed = new_pos_embed[:, :, 6 - int(f_dim/2): 6 - int(f_dim/2) + f_dim, :]
-        # otherwise interpolate
-        elif f_dim > 12:
-            new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
-        new_pos_embed = new_pos_embed.reshape(1, 768, num_patches).transpose(1, 2)
-        self.ast_pos_embed = nn.Parameter(torch.cat([self.ast_pos_embed[:, :2, :].detach(), new_pos_embed], dim=1))
+        # new_pos_embed = self.ast_pos_embed[:, 2:, :].detach().reshape(1, 1212, 768).transpose(1, 2).reshape(1, 768, 12, 101)
+        # # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding
+        # if t_dim < 101:
+        #     new_pos_embed = new_pos_embed[:, :, :, 50 - int(t_dim/2): 50 - int(t_dim/2) + t_dim]
+        # # otherwise interpolate
+        # else:
+        #     new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(12, t_dim), mode='bilinear')
+        # if f_dim < 12:
+        #     new_pos_embed = new_pos_embed[:, :, 6 - int(f_dim/2): 6 - int(f_dim/2) + f_dim, :]
+        # # otherwise interpolate
+        # elif f_dim > 12:
+        #     new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
+        # new_pos_embed = new_pos_embed.reshape(1, 768, num_patches).transpose(1, 2)
+        # self.ast_pos_embed = nn.Parameter(torch.cat([self.ast_pos_embed[:, :2, :].detach(), new_pos_embed], dim=1))
         self.spec_shape=[f_dim, t_dim]
         self.audio_patch = self.ast_patch_embed.num_patches
         ################################################################
@@ -1268,9 +1268,9 @@ class STCrossTransformer(nn.Module):
     def get_num_layers(self):
         return len(self.blocks)
     
-    def get_shape(self, fstride, tstride, input_fdim=128, input_tdim=1024):
+    def get_shape(self, fstride, tstride, input_fdim=128, input_tdim=1024, fshape=16, tshape=16):
         test_input = torch.randn(1, 1, input_fdim, input_tdim)
-        test_proj = nn.Conv2d(1, self.original_embedding_dim, kernel_size=(16, 16), stride=(fstride, tstride))
+        test_proj = nn.Conv2d(1, self.original_embedding_dim, kernel_size=(fshape, tshape), stride=(fstride, tstride))
         test_out = test_proj(test_input)
         f_dim = test_out.shape[2]
         t_dim = test_out.shape[3]

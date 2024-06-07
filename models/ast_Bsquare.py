@@ -924,10 +924,6 @@ class Block(nn.Module):
         
 
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        
-    def audio_attention(self, x: torch.Tensor):
-        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
-        return self.audio_attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
     
     def attention(self, x: torch.Tensor):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
@@ -945,30 +941,18 @@ class Block(nn.Module):
                 s_x = s_x + self.S_Adapter(self.attention(self.clip_ln_1(s_x)))
                 # VMAE Time MHSA
                 t_x = t_x + self.T_Adapter(self.attn(self.norm1(t_x)))
+                audio = audio + self.ast_drop_path(self.Audio_Adapter(self.ast_attn(self.ast_norm1(audio))))
             else:
                 # AIM Space MHSA
                 s_x = s_x + self.attention(self.clip_ln_1(s_x))
                 # VMAE Time MHSA
                 t_x = t_x + self.attn(self.norm1(t_x))
-            # AUDIO AST MHSA
-            if self.audio_enabled:
-                if self.use_Adapter:
-                    audio = audio + self.ast_drop_path(self.Audio_Adapter(self.ast_attn(self.ast_norm1(audio))))
-                else:
-                    audio = audio + self.ast_drop_path(self.ast_attn(self.ast_norm1(audio)))
+                audio = audio + self.ast_drop_path(self.ast_attn(self.ast_norm1(audio)))
         ########################################################################
         
         ############################ Cross Forward #############################
         if self.num_layer >= self.late_fusion:
-            if self.bcast_method == 'seq':
-                if not self.CA_eq or self.num_layer in self.CA:
-                    s_x, t_x = self.s_t_b_cast(s_x, t_x)
-                if self.num_layer in self.CA:
-                    audio = rearrange(audio,'b n d -> n b d')
-                    s_x, audio = self.s_audio_b_cast(s_x, audio, time_encodings, output_attentions=output_attentions)
-                    t_x, audio = self.t_audio_b_cast(t_x, audio, time_encodings, output_attentions=output_attentions)
-                    audio = rearrange(audio,'n b d -> b n d')
-            elif self.bcast_method == 'add':
+            if self.bcast_method == 'add':
                 audio = rearrange(audio,'b n d -> n b d')
                 if not self.CA_eq or self.num_layer in self.CA:
                     s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
@@ -976,12 +960,21 @@ class Block(nn.Module):
                     s_x_ct, audio_ct = self.s_audio_b_cast(s_x, audio, time_encodings, output_attentions=output_attentions)
                     t_x_vt, audio_vt = self.t_audio_b_cast(t_x, audio, time_encodings, output_attentions=output_attentions)
                 else:
-                    s_x_ct, audio_ct = 0, 0
-                    t_x_vt, audio_vt = 0, 0
-                s_x = s_x + s_x_cv + s_x_ct
-                t_x = t_x + t_x_cv + t_x_vt
-                audio = audio + audio_ct + audio_vt
+                    s_x_ct, audio_ct = s_x_cv, 0
+                    t_x_vt, audio_vt = t_x_cv, 0
+                s_x = s_x + (s_x_cv + s_x_ct)/2
+                t_x = t_x + (t_x_cv + t_x_vt)/2
+                audio = audio + (audio_ct + audio_vt)/2
                 audio = rearrange(audio,'n b d -> b n d')
+            # else self.bcast_method == 'seq':
+            else:
+                if not self.CA_eq or self.num_layer in self.CA:
+                    s_x, t_x = self.s_t_b_cast(s_x, t_x)
+                if self.num_layer in self.CA:
+                    audio = rearrange(audio,'b n d -> n b d')
+                    s_x, audio = self.s_audio_b_cast(s_x, audio, time_encodings, output_attentions=output_attentions)
+                    t_x, audio = self.t_audio_b_cast(t_x, audio, time_encodings, output_attentions=output_attentions)
+                    audio = rearrange(audio,'n b d -> b n d')
 
             
         #########################################################################

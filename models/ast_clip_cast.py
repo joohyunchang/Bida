@@ -579,10 +579,6 @@ class Block(nn.Module):
         
 
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        
-    def audio_attention(self, x: torch.Tensor):
-        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
-        return self.audio_attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
     
     def attention(self, x: torch.Tensor):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None

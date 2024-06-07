@@ -653,6 +653,7 @@ class STCrossTransformer(nn.Module):
                  time_encoding=False,
                  spec_shape=None,
                  audio_only_finetune=False,
+                 fstride = 16,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -668,9 +669,12 @@ class STCrossTransformer(nn.Module):
         self.spec_shape = spec_shape
         self.video_patch = (img_size // patch_size) ** 2
         self.audio_only_finetune=audio_only_finetune
+        self.fstride = fstride
         
         scale = embed_dim ** -0.5
         self.clip_conv1 = nn.Conv2d(in_channels=3, out_channels=embed_dim, kernel_size=patch_size, stride=patch_size, bias=False)
+        if not fstride==16:
+            self.audio_conv1 = nn.Conv2d(in_channels=3, out_channels=embed_dim, kernel_size=patch_size, stride=fstride, bias=False)
         self.clip_class_embedding = nn.Parameter(scale * torch.randn(embed_dim))
         self.clip_positional_embedding = nn.Parameter(scale * torch.randn((img_size // patch_size) ** 2 + 1, embed_dim))
         self.clip_ln_pre = LayerNorm(embed_dim)
@@ -824,7 +828,7 @@ class STCrossTransformer(nn.Module):
             s_x = s_x + self.audio_text_positional_embedding.to(s_x.dtype)
             s_x = self.audio_ln_pre(s_x)
         else:
-            s_x = self.clip_conv1(s_x) # shape = [*, embeddim, grid, grid]
+            s_x = self.clip_conv1(s_x) if self.fstride == 16 else self.audio_conv1(s_x)  # shape = [*, embeddim, grid, grid] 
             s_x = s_x.reshape(s_x.shape[0], s_x.shape[1], -1) # [*, embeddim, grid**2]
             s_x = s_x.permute(0, 2, 1) # shape[batch, patchnum, embeddim]
             s_x = torch.cat([self.clip_class_embedding.to(s_x.dtype) + torch.zeros(s_x.shape[0], 1, s_x.shape[-1], dtype=s_x.dtype, device=s_x.device), s_x], dim=1)

@@ -389,6 +389,8 @@ def load_bidir_weights(model, args, freeze_list=None):
     for key in all_keys:
         if key.startswith('backbone.'):
             new_dict[key[9:]] = checkpoint_model[key]
+        elif key.startswith('encoder.norm.'):
+            new_dict[key.replace('encoder.', 'vmae_fc_')] = checkpoint_model[key]
         elif key.startswith('encoder.'):
             new_dict[key[8:]] = checkpoint_model[key]
         else:
@@ -515,6 +517,9 @@ def load_bidir_weights(model, args, freeze_list=None):
         for key, value in audio_key.items():
             new_key = key.replace('clip', 'audio')
             new_dict[new_key] = value
+    
+    if args.enable_audio_stride:
+        new_dict['audio_conv1.weight'] = new_dict['clip_conv1.weight']
             
     # load로 불러온 pre-trained weight를 new_dict에 담아주고
     checkpoint_model = new_dict

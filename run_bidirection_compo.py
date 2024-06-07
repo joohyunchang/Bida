@@ -247,6 +247,7 @@ def get_args():
     parser.add_argument('--audio_only_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--ast_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--stride', type=int, default=10)
+    parser.add_argument('--enable_audio_stride', action='store_true', default=False)
     
     
     
@@ -299,7 +300,7 @@ def main(args, ds_init):
         dataset_val, _ = build_dataset(is_train=False, test_mode=False, args=args)
     dataset_test, _ = build_dataset(is_train=False, test_mode=True, args=args)
     
-    if 'SSAST' in args.ast_finetune:
+    if args.ast_finetune is not None and 'SSAST' in args.ast_finetune:
         args.stride = 16
 
     num_tasks = utils.get_world_size()
@@ -420,6 +421,12 @@ def main(args, ds_init):
         model_args['tstride'] = args.stride
         model_args['input_fdim'] = args.audio_height
         model_args['input_tdim'] = args.audio_width
+    if args.enable_audio_stride:
+        model_args['fstride'] = 10
+        fdim, tdim = int((args.audio_height-16)/10)+1, int((args.audio_width-16)/10)+1
+        model_args['audio_patch'] = fdim * tdim
+        model_args['spec_shape'] = [fdim, tdim]
+        
     model = create_model(**model_args)
     before_n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('Before Freeze number of params:', before_n_parameters)

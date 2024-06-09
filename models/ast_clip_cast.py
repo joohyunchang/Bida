@@ -223,7 +223,7 @@ class CrossAttentionS2T(nn.Module):
     def __init__(self, dim: int, n_head: int, num_frames: int, spec_frames=1, attn_all_frame = True, 
                  audio_patch = 196, audio_only=False, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None):
         super().__init__()
-        self.time_embedding_type = True if time_encoding else False
+        self.time_embedding_type = False if time_encoding else False
         self.use_stpos = True if time_encoding else True
         self.num_frames = num_frames//2
         self.spec_frames = spec_frames
@@ -351,7 +351,7 @@ class CrossAttentionT2S(nn.Module):
     def __init__(self, dim: int, n_head: int, num_frames: int, spec_frames=1, attn_all_frame = True, 
                  audio_patch = 196, audio_only=False, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None):
         super().__init__()
-        self.time_embedding_type = True if time_encoding else False
+        self.time_embedding_type = False if time_encoding else False
         self.use_stpos = True if time_encoding else True
         self.num_frames = num_frames//2
         self.spec_frames = spec_frames
@@ -934,7 +934,7 @@ class STCrossTransformer(nn.Module):
         
         t_x = t_x.permute(1,0,2)
         if self.pre_time_encoding:
-            s_x[1:,:,:] = s_x[1:,:,:] + rearrange(time_encodings[0], 'b t n d -> n (b t) d')
+            s_x[2:,:,:] = s_x[2:,:,:] + rearrange(time_encodings[0], 'b t n d -> n (b t) d')
             t_x[1:,:,:] = t_x[1:,:,:] + rearrange(time_encodings[1], 'b t n d -> n (b t) d')
         all_self_attentions = () if output_attentions is not None else None
         for blk in self.blocks:

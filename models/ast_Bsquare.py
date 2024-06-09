@@ -855,25 +855,16 @@ class Block(nn.Module):
             
             self.clip_ln_1 = LayerNorm(dim)
             self.clip_attn = nn.MultiheadAttention(dim, num_heads)
-            if self.use_Adapter:
-                self.S_Adapter = Adapter(dim)
-        ##################################################################
-        
-        ############################ VMAE MHSA ###########################
-        if self.use_SA:
+            
             self.norm1 = norm_layer(dim)
             self.attn = Attention(
                 dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 attn_drop=attn_drop, proj_drop=drop, attn_head_dim=attn_head_dim)
+            
             if self.use_Adapter:
+                self.S_Adapter = Adapter(dim)
                 self.T_Adapter = Adapter(dim)
-        ##################################################################
-        
-        ############################ Audio AST MHSA ######################
-        if self.use_SA:
-            if self.use_Adapter:
                 self.Audio_Adapter = Adapter(audio_dim)
-        ##################################################################
         #########################################################################################
         
         ###################################### Cross attention ####################################
@@ -901,25 +892,15 @@ class Block(nn.Module):
                 ("gelu", QuickGELU()),
                 ("c_proj", nn.Linear(dim * 4, dim))
             ]))
-            if self.use_Adapter:
-                self.S_MLP_Adapter = Adapter(dim, skip_connect=False)
-            self.attn_mask = None
-        #####################################################################
-        
-        ############################ VMAE FFN ###############################
-        if self.use_MLP:
+            
             self.norm2 = norm_layer(dim)
             self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+            
             if self.use_Adapter:
+                self.S_MLP_Adapter = Adapter(dim, skip_connect=False)
                 self.T_MLP_Adapter = Adapter(dim, skip_connect=False)
-        #####################################################################
-        
-        ############################ AUDIO AST FFN ##########################
-        if self.use_MLP:
-            if self.use_Adapter:
                 self.Audio_MLP_Adapter = Adapter(audio_dim, skip_connect=False)
             self.attn_mask = None
-        ####################################################################
         #########################################################################################
         
 
@@ -987,11 +968,11 @@ class Block(nn.Module):
             if self.use_Adapter:
                 s_x = s_x + self.clip_mlp(s_xn) + self.drop_path(self.scale * self.S_MLP_Adapter(s_xn))
                 t_x = t_x + self.mlp(t_xn) + self.drop_path(self.scale * self.T_MLP_Adapter(t_xn))
-                audio = audio + self.clip_mlp(audio_xn) + self.drop_path(self.scale * self.Audio_MLP_Adapter(audio_xn))
+                audio = audio + self.ast_mlp(audio_xn) + self.ast_drop_path(self.scale * self.Audio_MLP_Adapter(audio_xn))
             else:
                 s_x = s_x + self.clip_mlp(s_xn)
                 t_x = t_x + self.mlp(t_xn)
-                audio = audio + self.clip_mlp(audio_xn)
+                audio = audio + self.ast_mlp(audio_xn)
         ############################################################################
         
         return s_x, t_x, audio
@@ -1320,7 +1301,7 @@ class STCrossTransformer(nn.Module):
         
         s_x = s_x.permute(1,0,2)
         if self.pre_time_encoding:
-            audio_x[1:,:,:] = audio_x[1:,:,:] + rearrange(time_encodings[0], 'b t n d -> n (b t) d')
+            audio_x[2:,:,:] = audio_x[2:,:,:] + rearrange(time_encodings[0], 'b t n d -> n (b t) d')
             s_x[1:,:,:] = s_x[1:,:,:] + rearrange(time_encodings[1], 'b t n d -> n (b t) d')
             t_x[1:,:,:] = t_x[1:,:,:] + rearrange(time_encodings[1], 'b t n d -> n (b t) d')
         for blk in self.blocks:

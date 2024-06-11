@@ -226,10 +226,10 @@ class K400VidAudClsDataset(Dataset):
             sample = self.test_dataset[index] + '.mp4'
             sample = os.path.join(self.data_path, 'test', sample)
             chunk_nb, split_nb = self.test_seg[index]
-            buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             if self.disable_video:
                 return torch.tensor([1]), self.test_label_array[index], sample.split("/")[-1].split(".")[0], chunk_nb, split_nb, spec, caption, all_idx
 
+            buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             if len(buffer) == 0:
                 sample = sample.replace("kinetics400_resized", "kinetics400_resizeds")
                 buffer, all_idx = self.loadvideo_decord(sample, return_index=True)

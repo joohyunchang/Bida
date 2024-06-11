@@ -213,9 +213,9 @@ class VGGSoundVidAudClsDataset(Dataset):
             sample = self.test_dataset[index]
             sample = os.path.join(self.data_path, sample)
             chunk_nb, split_nb = self.test_seg[index]
-            buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             if self.disable_video:
                 return torch.tensor([1]), self.test_label_array[index], sample.split("/")[-1].split(".")[0], chunk_nb, split_nb, spec, caption, all_idx
+            buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
 
             while len(buffer) == 0:
                 index = np.random.randint(self.__len__())

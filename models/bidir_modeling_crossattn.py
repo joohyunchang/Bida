@@ -447,6 +447,8 @@ class STCrossTransformer(nn.Module):
                  use_Adapter=True,
                  use_SA=True, 
                  use_MLP=True,
+                 clip_only=False,
+                 vmae_only=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -457,6 +459,7 @@ class STCrossTransformer(nn.Module):
         self.down_ratio = down_ratio
         self.composition = composition
         self.audio_enabled = audio_enabled
+        self.clip_only, self.vmae_only = clip_only, vmae_only
         # =================================================================
         CA = [i for i in range(CA, depth)]
         # =================================================================
@@ -605,9 +608,14 @@ class STCrossTransformer(nn.Module):
         return s_x, t_x
 
     def forward(self, x, caption=None, spec=None):
-        # if spec is not None:
-        #     spec = torch.stack(spec, dim=0)
-        if self.audio_enabled:
+        if self.clip_only or self.vmae_only:
+            s_x, t_x = self.forward_features(x)
+            x = s_x if self.clip_only else t_x
+            if self.composition:
+                return self.head_noun(self.head_noun_dropout(x)), self.head_verb(self.head_verb_dropout(x))
+            else:
+                return self.head(self.head_dropout(x))
+        elif self.audio_enabled:
             s_x, t_x = self.forward_features(x, spec)
             x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
             # x = self.verb_last_Adapter(t_x)
@@ -645,11 +653,39 @@ def compo_bidir_vit_base_patch16_224(pretrained=False, **kwargs):
     return model
 
 @register_model
-def compo_audio_vit_base_patch16_224(pretrained=False, **kwargs):
+def clip_only_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, CA=12, clip_only=True, **kwargs)
     return model
+
+@register_model
+def vmae_only_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, CA=12, vmae_only=True, **kwargs)
+    return model
+
+@register_model
+def compo_clip_only_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=12, clip_only=True, **kwargs)
+    return model
+
+@register_model
+def compo_vmae_only_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, CA=12, vmae_only=True, **kwargs)
+    return model
+
+# @register_model
+# def compo_audio_vit_base_patch16_224(pretrained=False, **kwargs):
+#     model = STCrossTransformer(
+#         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+#         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, **kwargs)
+#     return model
 
 @register_model
 def compo_bidir_vit_late_fusion1_18_patch16_224(pretrained=False, **kwargs):

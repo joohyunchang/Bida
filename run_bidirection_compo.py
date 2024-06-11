@@ -35,6 +35,7 @@ import models.audio_cast
 import models.audio_only
 import models.audio_clip_cast
 import models.ast_clip_cast
+import models.ast_vmae_cast
 import models.beats_clip_cast
 import models.beats_Bsquare
 from models.prompt import text_prompt

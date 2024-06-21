@@ -709,7 +709,7 @@ class STCrossTransformer(nn.Module):
             N_x = self.meta_N_Adapter(s_x)
             V_x = self.meta_V_Adapter(t_x)
             
-            ov = ['noun', 'verb','both', None][2]
+            ov = ['noun', 'verb','both', None][0]
             if ov == 'both' or ov == 'noun':
                 noun_embedding, prompt_nountoken = self.replace_text_embedding(inp_nounlist, self.noundict, self.nountoken, N_x, embedding= 'noun')
             else:
@@ -783,10 +783,10 @@ def ov_cast_down4_base_patch16_224(pretrained=False, args=None, class_list=None,
 
 @register_model
 def compo_ov_cast_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
-    nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken = class_list
+    # nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken = class_list
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, text_dim=512, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, 
-        nounlist = nounlist, noundict=noundict, nountoken=nountoken, verblist=verblist, verbdict=verbdict, verbtoken=verbtoken,
+        nounlist = class_list[0], noundict=class_list[1], nountoken=class_list[2], verblist=class_list[3], verbdict=class_list[4], verbtoken=class_list[5],
         prefix = 16, postfix = 16, split_prompt = args.split_prompt, **kwargs)
     return model

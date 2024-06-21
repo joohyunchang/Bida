@@ -472,7 +472,7 @@ def load_bidir_weights(model, args, freeze_list=None):
         keys = prompt['module']
         new_dict['prompt_embedding.weight'] = keys['prompt_embedding.weight']
     
-    if args.ast_finetune is not None:
+    if getattr(args, 'ast_finetune', None) is not None:
         ast_key = torch.load(args.ast_finetune, map_location='cpu')
         for k in ['head.weight', 'head.bias', 'head_dist.weight', 'head_dist.bias']:
             if k in ast_key:
@@ -509,7 +509,7 @@ def load_bidir_weights(model, args, freeze_list=None):
         new_dict['ast_pos_embed'] = nn.Parameter(torch.cat([ast_key['module.v.pos_embed'][:, :2, :].detach(), new_pos_embed], dim=1))
                     
     
-    if args.audio_only_finetune is not None:
+    if getattr(args, 'audio_only_finetune', None) is not None:
         audio_key = torch.load(args.audio_only_finetune, map_location='cpu')['module']
         for k in ['head.weight', 'head.bias', 'head_noun.weight', 'head_noun.bias', 'head_verb.weight', 'head_verb.bias', 'audio_ln_post.weight' 'audio_ln_post.bias']:
             if k in audio_key:
@@ -518,7 +518,7 @@ def load_bidir_weights(model, args, freeze_list=None):
             new_key = key.replace('clip', 'audio')
             new_dict[new_key] = value
     
-    if args.enable_audio_stride:
+    if getattr(args, 'enable_audio_stride', None):
         new_dict['audio_conv1.weight'] = new_dict['clip_conv1.weight']
             
     # load로 불러온 pre-trained weight를 new_dict에 담아주고

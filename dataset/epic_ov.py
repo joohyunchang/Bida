@@ -15,14 +15,14 @@ import torchaudio
 import random
 import torch
 
-class EpicVideoClsDataset(Dataset):
+class EpicOVVideoClsDataset(Dataset):
      def __init__(self, anno_path, data_path, mode='train', clip_len=8,
                crop_size=224, short_side_size=256, new_height=256,
                new_width=340, keep_aspect_ratio=True, num_segment=1,
                num_crop=1, test_num_segment=10, test_num_crop=3, args=None, audio_path=None):
           self.anno_path = anno_path
           self.data_path = data_path
-          self.audio_path = args.audio_path
+          self.audio_path = getattr(args, 'audio_path', None)
           self.mode = mode
           self.clip_len = clip_len
           self.crop_size = crop_size
@@ -44,7 +44,7 @@ class EpicVideoClsDataset(Dataset):
                     self.rand_erase = True
           if VideoReader is None:
                raise ImportError("Unable to import `decord` which is required to read videos.")
-          if self.audio_path is not None:
+          if getattr(args, 'audio_path', None) is not None:
                self.audio_type = args.audio_type
                self.realtime_audio = args.realtime_audio
                self.autosave_spec = args.autosave_spec
@@ -62,8 +62,8 @@ class EpicVideoClsDataset(Dataset):
           verb_label_array = list(cleaned.values[:, 10]) # verb
           noun_label_array = list(cleaned.values[:, 12]) # noun
           action_label_array = list([n+v*300 for n, v in zip(noun_label_array,verb_label_array)]) # action
-          self.audio_samples = {cleaned.iloc[i, 0]: cleaned.iloc[i, 6:7] for i in range(len(cleaned))}
-          # self.audio_samples = None
+          # self.audio_samples = {cleaned.iloc[i, 0]: cleaned.iloc[i, 6:7] for i in range(len(cleaned))}
+          self.audio_samples = None
           # self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 9]) for i in range(len(cleaned))} if args.narration else None
           # self.narration_array = {cleaned.iloc[i, 0]: eval(cleaned.iloc[i, 14]) for i in range(len(cleaned))} if args.class_narration else self.narration_array
           self.narration_array = None
@@ -106,6 +106,7 @@ class EpicVideoClsDataset(Dataset):
                               self.test_seg.append((ck, cp))
                               
      def __getitem__(self, index):
+          all_idx = {}
           if self.mode == 'train':
                args = self.args
                scale_t = 1
@@ -143,7 +144,7 @@ class EpicVideoClsDataset(Dataset):
                sample = self.dataset_samples[index] + '.mp4'
                sample = os.path.join(self.data_path, sample)
                if self.disable_video:
-                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
                buffer = self.loadvideo_decord(sample, sample_rate_scale=scale_t) # T H W C
                
                if len(buffer) == 0:
@@ -166,7 +167,7 @@ class EpicVideoClsDataset(Dataset):
                     return frame_list, label_list, index_list, {}
                else:
                     buffer = self._aug_frame(buffer, args)
-               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
           
           elif self.mode == 'validation':
                # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
@@ -196,7 +197,7 @@ class EpicVideoClsDataset(Dataset):
                sample = self.dataset_samples[index] + '.mp4'
                sample = os.path.join(self.data_path, sample)
                if self.disable_video:
-                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+                    return torch.tensor([1]), self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
                buffer = self.loadvideo_decord(sample)
                
                if len(buffer) == 0:
@@ -206,7 +207,7 @@ class EpicVideoClsDataset(Dataset):
                          sample = self.dataset_samples[index]
                          buffer = self.loadvideo_decord(sample)
                buffer = self.data_transform(buffer)
-               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption
+               return buffer, self.label_array[index], sample.split("/")[-1].split(".")[0], spec, caption, all_idx
           
           elif self.mode == 'test':
                # caption = random.choice(self.narration_array[self.dataset_samples[index]]).strip('#C').strip('#c').strip('#0') if self.narration_array is not None else None
@@ -262,7 +263,7 @@ class EpicVideoClsDataset(Dataset):
 
                buffer = self.data_transform(buffer)
                return buffer, self.test_label_array[index], sample.split("/")[-1].split(".")[0], \
-                    chunk_nb, split_nb, spec, caption
+                    chunk_nb, split_nb, spec, caption, all_idx
           else:
                raise NameError('mode {} unkown'.format(self.mode))
                

@@ -44,6 +44,53 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         actiontoken = np.array([convert_to_token(a) for a in actionlist])
     # More datasets to be continued
 
+    elif dataset == 'EPIC_OV':
+        noun_anno_path = os.path.join(data_path, 'epic100_noun_classes.csv')
+        verb_anno_path = os.path.join(data_path, 'epic100_verb_classes.csv')
+        action_anno_path = os.path.join(data_path, 'epic100_action_classes.csv')
+        seen_noun = os.path.join(data_path, 'seen_nouns.txt')
+        noun_cleaned = pd.read_csv(noun_anno_path, header=None, delimiter=',')
+        verb_cleaned = pd.read_csv(verb_anno_path, header=None, delimiter=',')
+        action_cleaned = pd.read_csv(action_anno_path, header=None, delimiter=',')
+        seen_noun_cleaned = pd.read_csv(seen_noun, header=None, delim_whitespace=True)
+        nounlist = list(noun_cleaned.values[:, 0])
+        verblist = list(verb_cleaned.values[:, 0])
+        actionlist = list(action_cleaned.values[:, 0])
+        seen_nounlist = list(seen_noun_cleaned.values[:, 0])
+        nountoken = np.array([convert_to_token(a) for a in nounlist])
+        verbtoken = np.array([convert_to_token(a) for a in verblist])
+        actiontoken = np.array([convert_to_token(a) for a in actionlist])
+    
+        # query the vector from dictionary
+        with torch.no_grad():
+            nounembed = clipmodel.encode_text_light(torch.tensor(nountoken).to(device))
+            verbembed = clipmodel.encode_text_light(torch.tensor(verbtoken).to(device))
+            actionembed = clipmodel.encode_text_light(torch.tensor(actiontoken).to(device))
+                
+        noundict = OrderedDict((nounlist[i], nounembed[i].cpu().data.numpy()) for i in range(300))
+        seen_noundict = OrderedDict((i, noundict[i]) for i in seen_nounlist)
+        verbdict = OrderedDict((verblist[i], verbembed[i].cpu().data.numpy()) for i in range(97))
+        actiondict = OrderedDict((actionlist[i], actionembed[i].cpu().data.numpy()) for i in range(29100))
+        nountoken = OrderedDict((nounlist[i], nountoken[i]) for i in range(300))
+        verbtoken = OrderedDict((verblist[i], verbtoken[i]) for i in range(97))
+        
+        if useEncoder:
+            actionFeatures = []
+            with torch.no_grad():
+                clipmodel.half()
+                batch_size = 1000
+                for i in range(0, actionembed.size(0), batch_size):
+                    end_idx = min(i+batch_size, actionembed.size(0))
+                    actionFeature = clipmodel.encode_text(actionembed.squeeze(1)[i:end_idx], torch.from_numpy(actiontoken.squeeze(1)[i:end_idx]))
+                    actionFeatures.append(actionFeature)
+                actiondict = torch.cat(actionFeatures, dim=0)
+        
+        actiontoken = OrderedDict((actionlist[i], actiontoken[i]) for i in range(29100))
+        del clipmodel
+        torch.cuda.empty_cache()
+        
+        return [nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken, seen_nounlist, seen_noundict]
+    
     elif dataset == 'EPIC':
         noun_anno_path = os.path.join(data_path, 'epic100_noun_classes.csv')
         verb_anno_path = os.path.join(data_path, 'epic100_verb_classes.csv')

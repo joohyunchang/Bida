@@ -249,6 +249,8 @@ def get_args():
     parser.add_argument('--ast_finetune',default=None, help='finetune from clip checkpoint')
     parser.add_argument('--stride', type=int, default=10)
     parser.add_argument('--enable_audio_stride', action='store_true', default=False)
+    parser.add_argument('--mixup_spec', action='store_true', default=False)
+    parser.add_argument('--add_noise', action='store_true', default=False)
     
     
     

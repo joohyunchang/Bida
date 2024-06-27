@@ -82,8 +82,12 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: torch.nn.Module,
         batch_size = samples.shape[0]
         # idxs = [idx[:,:-samples.shape[2]], idx[:,-samples.shape[2]:]]
 
+        # print(args.mixup_spec, getattr(args, 'mixup_spec', None))
         if mixup_fn is not None:
-            samples, target_noun, target_verb = mixup_fn(samples, targets[:,:2])
+            if getattr(args, 'mixup_spec', None):
+                samples, spec, target_noun, target_verb = mixup_fn(samples, targets[:,:2], spec)
+            else:
+                samples, target_noun, target_verb = mixup_fn(samples, targets[:,:2])
         else:
             target_noun, target_verb = targets[:,0], targets[:,1]
         

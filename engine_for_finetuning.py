@@ -77,7 +77,10 @@ def train_one_epoch(args,model: torch.nn.Module, criterion: torch.nn.Module,
         target = targets
         
         if mixup_fn is not None:
-            samples, targets = mixup_fn(samples, targets)
+            if getattr(args, 'mixup_spec', None):
+                samples, spec, targets = mixup_fn(samples, targets, spec)
+            else:
+                samples, targets = mixup_fn(samples, targets)
 
         if loss_scaler is None:
             samples = samples.half()            

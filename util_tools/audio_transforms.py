@@ -7,7 +7,7 @@ import noisereduce as nr
 from librosa import stft, filters
 
 class Spectrogram:
-    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast', weight=1, noisereduce=False, specnorm=False, log=False):
+    def __init__(self, num_segment=16, n_mels=224, length=224, window_size=10, step_size=5, n_fft=2048, resampling_rate=24000, process_type='ast', weight=1, noisereduce=False, specnorm=False, log=False, noise=False):
         self.nperseg = int(round(window_size * resampling_rate / 1e3))
         self.noverlap = int(round(step_size * resampling_rate / 1e3))
         self.num_segment = num_segment
@@ -17,6 +17,7 @@ class Spectrogram:
         self.noisereduce = noisereduce
         self.specnorm = specnorm
         self.log = log
+        self.noise = noise
 
         if process_type == 'ast':
             self.melbins = n_mels
@@ -52,8 +53,10 @@ class Spectrogram:
                 )
         
     def add_noise(self, audio, noise_level=0.005):
-        noise = torch.randn(audio.shape)
-        return audio + noise_level * noise
+        # noise = torch.randn(audio.shape)
+        # return audio + noise_level * noise
+        audio = audio + torch.rand(audio.shape) * np.random.rand() / 10
+        return torch.roll(audio, np.random.randint(-10, 10), 0)
         
     def _specgram(self, audio, window_size=10, step_size=5, eps=1e-6, resampling_rate=24000, target_length=1.119, fbank_mean: float = 15.41663, fbank_std: float = 6.55582, audio_centra=0):
         # current_length = audio.shape[-1] / resampling_rate
@@ -376,6 +379,8 @@ class Spectrogram:
             # spec = spec.unsqueeze(0).unsqueeze(0).repeat(3, 16, 1, 1)
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
             # spec = spec.unsqueeze(0).unsqueeze(0).expand(3, 16, -1, -1)
+        if self.noise:
+            spec = self.add_noise(spec)
         if return_index:
             return spec, idx
         return spec

@@ -734,6 +734,7 @@ def main(args, ds_init):
             with open(os.path.join(args.output_dir + "/../", "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
     current_epoch = epoch
+    acc_str = ""
     for idx in range(2):
         if idx == 1:
             try:
@@ -886,6 +887,8 @@ def main(args, ds_init):
                             row[1].fill = red_fill
                             row[3].fill = red_fill
                     wb.save(os.path.join(args.output_dir + "/../", 'pred_result.xlsx'))
+            acc_str+=f"Epoch {current_epoch} Top 1 Accuracy is {final_top1_action:05.2f}, {final_top1_noun:05.2f}, {final_top1_verb:05.2f}, Top 5 ACT {final_top5_action:05.2f}\n" if args.composition else f"Epoch {current_epoch} Top 1 Accuracy is {final_top1:05.2f}, Top 5 {final_top5:05.2f}\n"
+    
     
 
     total_time = time.time() - start_time
@@ -901,10 +904,11 @@ def main(args, ds_init):
             'color' : '#ff0000',
             'author_name' : 'Job Finish',
             'title' : args.vmae_model,
-            'text' : cluster,
+            'text' : args.output_dir + '\n' + cluster,
             }
             attach_list=[attach_dict] 
-            contents=f"Job_name:{job_name}\nTraining time is {job_time}, Batch:{args.batch_size}, Parameter:{n_parameters}\nTop 1 Accuracy is {final_top1_action:05.2f}, {final_top1_noun:05.2f}, {final_top1_verb:05.2f}" if args.composition else f"Job_name:{job_name}\nTraining time is {job_time}, Batch:{args.batch_size}, Parameter:{n_parameters}\nTop 1 Accuracy is {final_top1:05.2f}"
+            contents=f"Job_name:{job_name}\nTraining time is {job_time}, B:{args.batch_size}, P:{n_parameters}\n" if args.composition else f"Job_name:{job_name}\nTraining time is {job_time}, B:{args.batch_size}, P:{n_parameters}\n"
+            contents+=acc_str
             notice_message(Token, "#notice-job", contents, attach_list)
     
 

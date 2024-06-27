@@ -1414,6 +1414,13 @@ def cast_single_ast_Bsquare_CA0_base_patch16_224(pretrained=False, args=None, cl
         prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, **kwargs)
     return model
 
+@register_model
+def cast_single_ast_Bsquare_CA0_NoAdap_base_patch16_224(pretrained=False, args=None, class_list=None, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, audio_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, audio_num_heads=12, CA=0, output_audio_dim=768,
+        prefix = 16, postfix = 16, spec_frames=1, attn_all_frame=True, use_Adapter=False, **kwargs)
+    return model
 
 # composition
 

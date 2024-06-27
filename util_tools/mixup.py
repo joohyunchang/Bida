@@ -194,7 +194,7 @@ class Mixup:
         lam_batch = np.concatenate((lam_batch, lam_batch[::-1]))
         return torch.tensor(lam_batch, device=x.device, dtype=x.dtype).unsqueeze(1)
 
-    def _mix_batch(self, x):
+    def _mix_batch(self, x, spec=None):
         lam, use_cutmix = self._params_per_batch()
         if lam == 1.:
             return 1.
@@ -202,25 +202,36 @@ class Mixup:
             (yl, yh, xl, xh), lam = cutmix_bbox_and_lam(
                 x.shape, lam, ratio_minmax=self.cutmix_minmax, correct_lam=self.correct_lam)
             x[..., yl:yh, xl:xh] = x.flip(0)[..., yl:yh, xl:xh]
+            if spec is not None:
+                (syl, syh, sxl, sxh), lam = cutmix_bbox_and_lam(
+                    spec.shape, lam, ratio_minmax=self.cutmix_minmax, correct_lam=self.correct_lam)
+                spec[..., syl:syh, sxl:sxh] = spec.flip(0)[..., syl:syh, sxl:sxh]
         else:
             x_flipped = x.flip(0).mul_(1. - lam)
             x.mul_(lam).add_(x_flipped)
+            if spec is not None:
+                spec_flipped = spec.flip(0).mul_(1. - lam)
+                spec.mul_(lam).add_(spec_flipped)
         return lam
 
-    def __call__(self, x, target):
+    def __call__(self, x, target, spec=None):
         assert len(x) % 2 == 0, 'Batch size should be even when using this'
         if self.mode == 'elem':
             lam = self._mix_elem(x)
         elif self.mode == 'pair':
             lam = self._mix_pair(x)
         else:
-            lam = self._mix_batch(x)
+            lam = self._mix_batch(x, spec)
         if self.composition:
             target_noun = mixup_target(target[:,0], 300, lam, self.label_smoothing, x.device)
             target_verb = mixup_target(target[:,1], 97, lam, self.label_smoothing, x.device)
+            if spec is not None:
+                return x, spec, target_noun, target_verb
             return x, target_noun, target_verb
         else:
             target = mixup_target(target, self.num_classes, lam, self.label_smoothing, x.device)
+            if spec is not None:
+                return x, spec, target
             return x, target
 
 

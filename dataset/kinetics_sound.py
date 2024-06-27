@@ -55,8 +55,10 @@ class K400VidAudClsDataset(Dataset):
             # if args.audio_height != 224 or args.audio_width != 224:
             #     self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=1024)
             # else:
-            self.spectrogram = Spectrogram(self.clip_len, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm)
-          
+            if (mode == 'train') and getattr(args, 'add_noise', None): 
+                self.spectrogram = Spectrogram(self.clip_len, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm, noise=True)
+            else:
+                self.spectrogram = Spectrogram(self.clip_len, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm)
 
         import pandas as pd
         cleaned = pd.read_csv(anno_path, header=None, names=['1', '2', '3'])

@@ -49,9 +49,11 @@ class EpicSoundsVideoClsDataset(Dataset):
                self.data_set = args.data_set
                self.realtime_audio = args.realtime_audio
                self.autosave_spec = args.autosave_spec
-               self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm)
+               if (mode == 'train') and getattr(args, 'add_noise', None): 
+                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm, noise=True)
+               else:
+                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm)
                
-          
           import pandas as pd
           import pickle
           cleaned = pd.read_csv(self.anno_path, header=0, delimiter=',')

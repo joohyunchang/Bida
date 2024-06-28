@@ -117,7 +117,7 @@ class VideoClsDataset(Dataset):
                     audio_id = self.dataset_samples[index]
                     audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                     try:
-                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=random.random(), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
+                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=random.random(), audio_type=self.audio_type, data_set=self.data_set, mode=self.mode, return_index=True)
                         if args.spec_augment:
                             spec = self.spectrogram.spec_augment(spec)
                     except Exception as e:
@@ -168,7 +168,7 @@ class VideoClsDataset(Dataset):
                     audio_id = self.dataset_samples[index]
                     audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                     try:
-                        spec = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set)
+                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set, return_index=True)
                     except Exception as e:
                         warnings.warn("audio {} not correctly loaded during validation, {}".format(audio_sample, self.dataset_samples[index]))
                         warnings.warn(e)
@@ -215,10 +215,10 @@ class VideoClsDataset(Dataset):
             sample = self.test_dataset[index] + '.mp4'
             sample = os.path.join(self.data_path, 'test', sample)
             chunk_nb, split_nb = self.test_seg[index]
-            buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             if self.disable_video:
                 return torch.tensor([1]), self.test_label_array[index], sample.split("/")[-1].split(".")[0], chunk_nb, split_nb, spec, caption, all_idx
 
+            buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
             if len(buffer) == 0:
                 sample = sample.replace("kinetics400_resized", "kinetics400_resizeds")
                 buffer, all_idx = self.loadvideo_decord(sample, return_index=True)

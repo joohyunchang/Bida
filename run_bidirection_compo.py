@@ -250,6 +250,7 @@ def get_args():
     parser.add_argument('--stride', type=int, default=10)
     parser.add_argument('--enable_audio_stride', action='store_true', default=False)
     parser.add_argument('--mixup_spec', action='store_true', default=False)
+    parser.add_argument('--spec_cutmix', action='store_true', default=False)
     parser.add_argument('--add_noise', action='store_true', default=False)
     
     
@@ -382,7 +383,7 @@ def main(args, ds_init):
         mixup_fn = Mixup(
             mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
-            label_smoothing=args.smoothing, num_classes=args.nb_classes, composition=args.composition)
+            label_smoothing=args.smoothing, num_classes=args.nb_classes, composition=args.composition, spec_cutmix=args.spec_cutmix)
 
     patch_size = 14
     print("Patch size = %s" % str(patch_size))

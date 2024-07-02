@@ -102,7 +102,7 @@ class Mixup:
         num_classes (int): number of classes for target
     """
     def __init__(self, mixup_alpha=1., cutmix_alpha=0., cutmix_minmax=None, prob=1.0, switch_prob=0.5,
-                 mode='batch', correct_lam=True, label_smoothing=0.1, num_classes=1000, composition=False):
+                 mode='batch', correct_lam=True, label_smoothing=0.1, num_classes=1000, composition=False, spec_cutmix=False):
         self.mixup_alpha = mixup_alpha
         self.cutmix_alpha = cutmix_alpha
         self.cutmix_minmax = cutmix_minmax
@@ -118,6 +118,7 @@ class Mixup:
         self.correct_lam = correct_lam  # correct lambda based on clipped area for cutmix
         self.mixup_enabled = True  # set to false to disable mixing (intended tp be set by train loop)
         self.composition = composition
+        self.spec_cutmix = spec_cutmix
 
     def _params_per_elem(self, batch_size):
         lam = np.ones(batch_size, dtype=np.float32)
@@ -209,9 +210,13 @@ class Mixup:
         else:
             x_flipped = x.flip(0).mul_(1. - lam)
             x.mul_(lam).add_(x_flipped)
-            if spec is not None:
+            if spec is not None and not self.spec_cutmix:
                 spec_flipped = spec.flip(0).mul_(1. - lam)
                 spec.mul_(lam).add_(spec_flipped)
+            elif spec is not None and self.spec_cutmix:
+                (syl, syh, sxl, sxh), lam = cutmix_bbox_and_lam(
+                    spec.shape, lam, ratio_minmax=self.cutmix_minmax, correct_lam=self.correct_lam)
+                spec[..., syl:syh, sxl:sxh] = spec.flip(0)[..., syl:syh, sxl:sxh]
         return lam
 
     def __call__(self, x, target, spec=None):

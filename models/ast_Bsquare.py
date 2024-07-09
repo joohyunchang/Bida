@@ -877,6 +877,13 @@ class Block(nn.Module):
             if self.num_layer in self.CA:
                 self.s_audio_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, audio_dim, audio_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect, time_encoding=time_encoding, spec_shape=spec_shape)
                 self.t_audio_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, audio_dim, audio_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect ,time_encoding=time_encoding, spec_shape=spec_shape)
+        
+        # if num_layer >= late_fusion:
+        #     if not self.CA_eq or self.num_layer in self.CA:
+        #         self.s_audio_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, audio_dim, audio_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect, time_encoding=time_encoding, spec_shape=spec_shape)
+        #     if self.num_layer in self.CA:
+        #         self.s_t_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, audio_dim, audio_num_heads, drop_path, act_layer, norm_layer, type='s-t', skip_connect=skip_connect)
+        #         self.t_audio_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, audio_dim, audio_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect ,time_encoding=time_encoding, spec_shape=spec_shape)
         ###########################################################################################
         
         ###################################### FFN code #########################################
@@ -943,6 +950,15 @@ class Block(nn.Module):
                 else:
                     s_x_ct, audio_ct = s_x_cv, 0
                     t_x_vt, audio_vt = t_x_cv, 0
+                    
+                # if not self.CA_eq or self.num_layer in self.CA:
+                #     s_x_ct, audio_ct = self.s_audio_b_cast(s_x, audio, time_encodings, output_attentions=output_attentions)
+                # if self.num_layer in self.CA:
+                #     s_x_cv, t_x_cv = self.s_t_b_cast(s_x, t_x)
+                #     t_x_vt, audio_vt = self.t_audio_b_cast(t_x, audio, time_encodings, output_attentions=output_attentions)
+                # else:
+                #     s_x_cv, t_x_cv = s_x_ct, 0
+                #     t_x_vt, audio_vt = 0, audio_ct
                 s_x = s_x + (s_x_cv + s_x_ct)/2
                 t_x = t_x + (t_x_cv + t_x_vt)/2
                 audio = audio + (audio_ct + audio_vt)/2
@@ -1379,6 +1395,7 @@ class STCrossTransformer(nn.Module):
             s_x, t_x, audio_x = self.forward_features(x, spec=spec, time_encodings=time_encodings, output_attentions=output_attentions)
             if self.use_videoF and self.use_audioF:
                 x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x) + self.audio_verb_last_Adapter(audio_x)
+                # x = self.noun_last_Adapter(s_x)+ self.audio_verb_last_Adapter(audio_x)
             elif self.use_videoF:
                 x = self.noun_last_Adapter(s_x) + self.verb_last_Adapter(t_x)
             else:

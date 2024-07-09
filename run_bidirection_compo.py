@@ -420,7 +420,7 @@ def main(args, ds_init):
         model_args['spec_shape'] = [args.audio_height//args.window_size, args.audio_width//args.window_size]
     if args.audio_only_finetune:
         model_args['audio_only_finetune'] = True
-    if 'ast' in args.vmae_model:
+    if '_ast_' in args.vmae_model:
         model_args['fstride'] = args.stride
         model_args['tstride'] = args.stride
         model_args['input_fdim'] = args.audio_height

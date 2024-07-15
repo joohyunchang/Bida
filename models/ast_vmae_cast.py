@@ -909,7 +909,7 @@ class STCrossTransformer(nn.Module):
                 # next_segments = start_end[:, 0:1] + (start_end[:, 1:2] - start_end[:, 0:1]) * linspace[1:]
                 # segments = torch.stack([segments, next_segments], dim=-1).view(idx.shape[0], self.spec_shape[1], 2)
                 start_end = idx[:, 0, :]
-                num_segments = 8
+                num_segments = self.num_frames // 2
                 linspace = torch.linspace(0, 1, steps=num_segments+1).to(dtype=x.dtype, device=x.device)
                 segments = start_end[:, 0:1] + (start_end[:, 1:2] - start_end[:, 0:1]) * linspace[:-1]
                 next_segments = start_end[:, 0:1] + (start_end[:, 1:2] - start_end[:, 0:1]) * linspace[1:]

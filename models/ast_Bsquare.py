@@ -225,7 +225,7 @@ class CrossAttentionS2Audio(nn.Module):
                  audio_patch = 196, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None, time_embedding_type=False, use_stpos=True):
         super().__init__()
         self.time_embedding_type = time_embedding_type if time_encoding else False
-        self.use_stpos = use_stpos if time_encoding else True
+        self.use_stpos = use_stpos
         self.num_frames = num_frames//2
         self.spec_frames = spec_frames
         self.audio_patch = audio_patch
@@ -336,7 +336,7 @@ class CrossAttentionAudio2S(nn.Module):
                  audio_patch = 196, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None, time_embedding_type=False, use_stpos=True):
         super().__init__()
         self.time_embedding_type = time_embedding_type if time_encoding else False
-        self.use_stpos = use_stpos if time_encoding else True
+        self.use_stpos = use_stpos
         self.num_frames = num_frames//2
         self.spec_frames = spec_frames
         self.audio_patch = audio_patch
@@ -446,7 +446,7 @@ class CrossAttentionT2Audio(nn.Module):
                  audio_patch = 196, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None, time_embedding_type=False, use_stpos=True):
         super().__init__()
         self.time_embedding_type = time_embedding_type if time_encoding else False
-        self.use_stpos = use_stpos if time_encoding else True
+        self.use_stpos = use_stpos
         self.num_frames = num_frames//2
         self.spec_frames = spec_frames
         self.audio_patch = audio_patch
@@ -557,7 +557,7 @@ class CrossAttentionAudio2T(nn.Module):
                  audio_patch = 196, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None, time_embedding_type=False, use_stpos=True):
         super().__init__()
         self.time_embedding_type = time_embedding_type if time_encoding else False
-        self.use_stpos = use_stpos if time_encoding else True
+        self.use_stpos = use_stpos
         self.num_frames = num_frames//2
         self.spec_frames = spec_frames
         self.audio_patch = audio_patch

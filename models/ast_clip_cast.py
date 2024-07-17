@@ -221,10 +221,10 @@ class deit_PatchEmbed(nn.Module):
 # spatial to temporal cross attention module.
 class CrossAttentionS2T(nn.Module):
     def __init__(self, dim: int, n_head: int, num_frames: int, spec_frames=1, attn_all_frame = True, 
-                 audio_patch = 196, audio_only=False, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None, video_patch=196):
+                 audio_patch = 196, audio_only=False, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None, video_patch=196, time_embedding_type=False, use_stpos=True):
         super().__init__()
-        self.time_embedding_type = True if time_encoding else False
-        self.use_stpos = True if time_encoding else True
+        self.time_embedding_type = time_embedding_type if time_encoding else False
+        self.use_stpos = use_stpos if time_encoding else True
         self.num_frames = num_frames//2
         self.spec_frames = spec_frames
         self.audio_patch = audio_patch
@@ -349,10 +349,10 @@ class CrossAttentionS2T(nn.Module):
 # this codes from CLIP github(https://github.com/openai/CLIP)
 class CrossAttentionT2S(nn.Module):
     def __init__(self, dim: int, n_head: int, num_frames: int, spec_frames=1, attn_all_frame = True, 
-                 audio_patch = 196, audio_only=False, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None, video_patch=196):
+                 audio_patch = 196, audio_only=False, attn_mask: torch.Tensor = None, time_encoding=False, spec_shape=None, video_patch=196, time_embedding_type=False, use_stpos=True):
         super().__init__()
-        self.time_embedding_type = True if time_encoding else False
-        self.use_stpos = True if time_encoding else True
+        self.time_embedding_type = time_embedding_type if time_encoding else False
+        self.use_stpos = use_stpos if time_encoding else True
         self.num_frames = num_frames//2
         self.spec_frames = spec_frames
         self.audio_patch = audio_patch
@@ -486,7 +486,7 @@ class Block(nn.Module):
     def __init__(self, dim, num_heads, num_frames=16, mlp_ratio=4., down_ratio=2, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None, 
                  spec_frames=1, attn_all_frame=True, CA=0, use_Adapter=True, audio_patch=196, use_AIM=False, audio_only=False,
-                 late_fusion=0, use_SA=True, use_MLP=True, time_encoding=False, spec_shape=None, video_patch=196, clip_only=False):
+                 late_fusion=0, use_SA=True, use_MLP=True, time_encoding=False, spec_shape=None, video_patch=196, clip_only=False, time_embedding_type=False, use_stpos=True):
         super().__init__()
         self.num_layer = num_layer
         self.num_heads = num_heads
@@ -537,13 +537,13 @@ class Block(nn.Module):
                 self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
                 self.ln_s_cross = norm_layer(dim//self.down_ratio)
                 self.ln_t_cross = norm_layer(dim//self.down_ratio)
-                self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch)
-                self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch)
+                self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
+                self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
                 self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
                 self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
             else:
-                self.t2s_cross = CrossAttentionT2S(dim, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch)
-                self.s2t_cross = CrossAttentionS2T(dim, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch)
+                self.t2s_cross = CrossAttentionT2S(dim, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
+                self.s2t_cross = CrossAttentionS2T(dim, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
                 self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
                 self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
                 self.ln_s_cross = norm_layer(dim//self.down_ratio)
@@ -694,7 +694,9 @@ class STCrossTransformer(nn.Module):
                  time_encoding=False,
                  spec_shape=None,
                  audio_only_finetune=False,
-                 label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, 
+                 label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024,
+                 time_embedding_type=False, 
+                 use_stpos=True,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -778,26 +780,21 @@ class STCrossTransformer(nn.Module):
         self.pre_time_encoding = False
         self.split_time_mlp = False
         self.use_spec_time = True
+        time_mlp_layers = 3
         self.time_encoding = time_encoding if not self.pre_time_encoding else False
         if self.time_encoding or self.pre_time_encoding:
             down_dim = self.embed_dim // self.down_ratio if not self.pre_time_encoding else self.embed_dim
             self.time_mlp = nn.Sequential(
                 nn.Linear(2, down_dim),
                 nn.ReLU(),
-                nn.Linear(down_dim, down_dim),
-                nn.ReLU(),
-                nn.Linear(down_dim, down_dim),
-                nn.ReLU(),
+                *[nn.Sequential(nn.Linear(down_dim, down_dim), nn.ReLU()) for i in range(time_mlp_layers - 1)],
                 nn.LayerNorm(down_dim)
                 )
             if self.split_time_mlp:
                 self.audio_time_mlp = nn.Sequential(
                     nn.Linear(2, down_dim),
                     nn.ReLU(),
-                    nn.Linear(down_dim, down_dim),
-                    nn.ReLU(),
-                    nn.Linear(down_dim, down_dim),
-                    nn.ReLU(),
+                    *[nn.Sequential(nn.Linear(down_dim, down_dim), nn.ReLU()) for i in range(time_mlp_layers - 1)],
                     nn.LayerNorm(down_dim)
                     )
         ###################################
@@ -808,7 +805,7 @@ class STCrossTransformer(nn.Module):
                 dim=embed_dim, num_heads=num_heads, num_frames=self.num_frames, mlp_ratio=mlp_ratio,down_ratio=self.down_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
                 init_values=init_values, num_layer=i, spec_frames=spec_frames, attn_all_frame=attn_all_frame, CA=CA, use_Adapter=use_Adapter,late_fusion=late_fusion, use_SA=use_SA, use_MLP=use_MLP,
-                audio_patch=self.audio_patch, video_patch=self.video_patch, use_AIM=use_AIM, audio_only=audio_only, time_encoding=self.time_encoding, spec_shape=spec_shape)
+                audio_patch=self.audio_patch, video_patch=self.video_patch, use_AIM=use_AIM, audio_only=audio_only, time_encoding=self.time_encoding, spec_shape=spec_shape, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
             for i in range(depth)])
         
         self.audio_ln_post = LayerNorm(embed_dim)

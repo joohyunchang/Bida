@@ -252,6 +252,7 @@ def get_args():
     parser.add_argument('--mixup_spec', action='store_true', default=False)
     parser.add_argument('--spec_cutmix', action='store_true', default=False)
     parser.add_argument('--add_noise', action='store_true', default=False)
+    parser.add_argument('--not_use_stpos', action='store_flase', default=True)
     
     
     
@@ -430,6 +431,8 @@ def main(args, ds_init):
         fdim, tdim = int((args.audio_height-16)/10)+1, int((args.audio_width-16)/10)+1
         model_args['audio_patch'] = fdim * tdim
         model_args['spec_shape'] = [fdim, tdim]
+    if args.not_use_stpos == False:
+        model_args['use_stpos'] = args.not_use_stpos
         
     model = create_model(**model_args)
     before_n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)

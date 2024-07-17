@@ -252,7 +252,7 @@ def get_args():
     parser.add_argument('--mixup_spec', action='store_true', default=False)
     parser.add_argument('--spec_cutmix', action='store_true', default=False)
     parser.add_argument('--add_noise', action='store_true', default=False)
-    parser.add_argument('--not_use_stpos', action='store_flase', default=True)
+    parser.add_argument('--not_use_stpos', action='store_false', default=True)
     
     
     

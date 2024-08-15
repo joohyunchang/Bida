@@ -304,7 +304,7 @@ class Block(nn.Module):
         self.CA = CA
         self.use_SA, self.use_MLP = True, True
         if num_layer >= late_fusion:
-            self.use_Adapter = False
+            self.use_Adapter = True
             self.use_SA, self.use_MLP = use_SA, use_MLP
         ###################################### MHSA code #####################################
         ############################ AIM MHSA ###########################

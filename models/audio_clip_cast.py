@@ -656,6 +656,8 @@ class STCrossTransformer(nn.Module):
                  fstride = 16,
                  time_embedding_type=False, 
                  use_stpos=True,
+                 pre_time_encoding=False,
+                 split_time_mlp=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -704,7 +706,7 @@ class STCrossTransformer(nn.Module):
         CA=CA
         # self.num_frames = all_frames * 2
         # CA=12
-        self.pre_time_encoding = False
+        self.pre_time_encoding = pre_time_encoding
         self.split_time_mlp = False
         self.use_spec_time = True
         self.time_encoding = time_encoding if not self.pre_time_encoding else False

@@ -697,6 +697,8 @@ class STCrossTransformer(nn.Module):
                  label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024,
                  time_embedding_type=False, 
                  use_stpos=True,
+                 pre_time_encoding=False,
+                 split_time_mlp=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -777,8 +779,8 @@ class STCrossTransformer(nn.Module):
         CA=CA
         # self.num_frames = all_frames * 2
         # CA=12
-        self.pre_time_encoding = False
-        self.split_time_mlp = False
+        self.pre_time_encoding = pre_time_encoding
+        self.split_time_mlp = split_time_mlp
         self.use_spec_time = True
         time_mlp_layers = 3
         self.time_encoding = time_encoding if not self.pre_time_encoding else False
@@ -932,7 +934,7 @@ class STCrossTransformer(nn.Module):
         
         t_x = t_x.permute(1,0,2)
         if self.pre_time_encoding:
-            s_x[2:,:,:] = s_x[2:,:,:] + rearrange(time_encodings[0], 'b t n d -> n (b t) d')
+            s_x[:,2:,:] = s_x[:,2:,:] + rearrange(time_encodings[0], 'b t n d -> (b t) n d')
             t_x[1:,:,:] = t_x[1:,:,:] + rearrange(time_encodings[1], 'b t n d -> n (b t) d')
         all_self_attentions = () if output_attentions is not None else None
         for blk in self.blocks:

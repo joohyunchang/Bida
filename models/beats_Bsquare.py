@@ -866,6 +866,7 @@ class STCrossTransformer(nn.Module):
                  audio_patch=196,
                  CA_eq=False,
                  use_Adapter=True,
+                 pre_time_encoding=False,
                  use_textF = True):
         super().__init__()
         self.num_classes = num_classes

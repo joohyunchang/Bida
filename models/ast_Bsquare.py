@@ -1044,6 +1044,8 @@ class STCrossTransformer(nn.Module):
                  label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, 
                  time_embedding_type=False, 
                  use_stpos=True,
+                 pre_time_encoding=False,
+                 split_time_mlp=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -1120,8 +1122,8 @@ class STCrossTransformer(nn.Module):
         self.use_audioF = True
         CA = [i for i in range(CA, depth)]
         attn_all_frame = attn_all_frame
-        self.pre_time_encoding = False
-        self.split_time_mlp = False
+        self.pre_time_encoding = pre_time_encoding
+        self.split_time_mlp = split_time_mlp
         self.use_spec_time = True
         self.time_encoding = time_encoding if not self.pre_time_encoding else False
         if self.time_encoding or self.pre_time_encoding:
@@ -1319,7 +1321,7 @@ class STCrossTransformer(nn.Module):
         
         s_x = s_x.permute(1,0,2)
         if self.pre_time_encoding:
-            audio_x[2:,:,:] = audio_x[2:,:,:] + rearrange(time_encodings[0], 'b t n d -> n (b t) d')
+            audio_x[:,2:,:] = audio_x[:,2:,:] + rearrange(time_encodings[0], 'b t n d -> (b t) n d')
             s_x[1:,:,:] = s_x[1:,:,:] + rearrange(time_encodings[1], 'b t n d -> n (b t) d')
             t_x[1:,:,:] = t_x[1:,:,:] + rearrange(time_encodings[1], 'b t n d -> n (b t) d')
         for blk in self.blocks:

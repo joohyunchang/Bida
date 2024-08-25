@@ -255,6 +255,7 @@ def get_args():
     parser.add_argument('--not_use_stpos', action='store_false', default=True)
     parser.add_argument('--pre_time_encoding', action='store_true', default=False)
     parser.add_argument('--split_time_mlp', action='store_true', default=False)
+    parser.add_argument('--bcast_share', action='store_true', default=False)
     
     
     
@@ -439,6 +440,8 @@ def main(args, ds_init):
         model_args['pre_time_encoding'] = args.pre_time_encoding
     if args.split_time_mlp == True:
         model_args['split_time_mlp'] = args.split_time_mlp
+    if args.bcast_share == True:
+        model_args['bcast_share'] = args.bcast_share
         
     model = create_model(**model_args)
     before_n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)

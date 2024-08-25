@@ -1009,7 +1009,7 @@ class Block(nn.Module):
                  drop_path=0., init_values=None, num_layer=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attn_head_dim=None,
                  audio_dim=512, audio_num_heads=8, use_Adapter=False, CA=[i for i in range(12)], audio_enabled=False, 
                  spec_frames=8, attn_all_frame=True, audio_patch=196, CA_eq=False, bcast_method='seq', late_fusion=0, use_SA=True, use_MLP=True,
-                time_encoding=False, spec_shape=None, time_embedding_type=False, use_stpos=True):
+                time_encoding=False, spec_shape=None, time_embedding_type=False, use_stpos=True, bcast_share=False):
         super().__init__()
         self.num_layer = num_layer
         self.CA = CA
@@ -1074,6 +1074,27 @@ class Block(nn.Module):
                 else:
                     self.s_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='s-text', attn_all_frame=attn_all_frame, skip_connect=skip_connect)
                     self.t_text_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, text_dim, text_num_heads, drop_path, act_layer, norm_layer, type='t-text', attn_all_frame=attn_all_frame, skip_connect=skip_connect)
+                if bcast_share:
+                    self.s_text_b_cast.cross_l_down = self.s_t_b_cast.cross_l_down
+                    self.t_text_b_cast.cross_l_down = self.s_t_b_cast.cross_r_down
+                    self.s_text_b_cast.cross_r_down = self.t_text_b_cast.cross_r_down
+                    self.s_text_b_cast.cross_l_up = self.s_t_b_cast.cross_l_up
+                    self.t_text_b_cast.cross_l_up = self.s_t_b_cast.cross_r_up
+                    self.s_text_b_cast.cross_r_up = self.t_text_b_cast.cross_r_up
+                    
+                    # self.s_text_b_cast.r2l_cross.q =  self.s_t_b_cast.r2l_cross.t2s_q
+                    # self.s_text_b_cast.r2l_cross.q_bias =  self.s_t_b_cast.r2l_cross.t2s_q_bias
+                    # self.t_text_b_cast.r2l_cross.q = self.s_t_b_cast.l2r_cross.s2t_q
+                    # self.t_text_b_cast.r2l_cross.q_bias = self.s_t_b_cast.l2r_cross.s2t_q_bias
+                    # self.s_text_b_cast.l2r_cross.q = self.t_text_b_cast.l2r_cross.q
+                    # self.s_text_b_cast.l2r_cross.q_bias = self.t_text_b_cast.l2r_cross.q_bias
+                    
+                    # self.s_text_b_cast.l2r_cross.kv = self.s_t_b_cast.l2r_cross.s2t_kv
+                    # self.s_text_b_cast.l2r_cross.kv_bias = self.s_t_b_cast.l2r_cross.s2t_kv_bias
+                    # self.t_text_b_cast.l2r_cross.kv = self.s_t_b_cast.l2r_cross.s2t_kv
+                    # self.t_text_b_cast.l2r_cross.kv_bias = self.s_t_b_cast.l2r_cross.s2t_kv_bias
+                    # self.s_text_b_cast.r2l_cross.kv = self.t_text_b_cast.r2l_cross.kv
+                    # self.s_text_b_cast.r2l_cross.kv_bias = self.t_text_b_cast.r2l_cross.kv_bias
             
             if bcast_method == 'add_param':
                 self.s_scale_cross = torch.nn.Parameter(torch.randn(1))
@@ -1382,7 +1403,8 @@ class STCrossTransformer(nn.Module):
                  time_embedding_type=False, 
                  use_stpos=True,
                  pre_time_encoding=False,
-                 split_time_mlp=False,):
+                 split_time_mlp=False,
+                 bcast_share=False,):
         super().__init__()
         self.num_classes = num_classes
         self.num_frames = all_frames
@@ -1484,7 +1506,7 @@ class STCrossTransformer(nn.Module):
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
                 init_values=init_values, num_layer=i, audio_dim=self.text_dim, audio_num_heads=text_num_heads, use_Adapter=use_Adapter, CA=CA, audio_enabled=self.audio_enabled,
                 spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, CA_eq=CA_eq, bcast_method=bcast_method, late_fusion=late_fusion, use_SA=use_SA, use_MLP=use_MLP,
-                time_encoding=self.time_encoding, spec_shape=spec_shape, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
+                time_encoding=self.time_encoding, spec_shape=spec_shape, time_embedding_type=time_embedding_type, use_stpos=use_stpos, bcast_share=bcast_share)
             for i in range(depth)])
         
         self.clip_ln_post = LayerNorm(embed_dim)

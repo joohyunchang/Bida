@@ -280,8 +280,9 @@ class CrossAttentionS2T(nn.Module):
             # s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
             # s_x_pat = s_x_pat + self.clip_space_pos
             s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b n t d', t=self.spec_frames)
-            s_x_pat = s_x_pat + self.clip_temporal_pos
+            s_x_pat = s_x_pat + self.clip_temporal_pos if self.use_stpos else s_x_pat
             s_x_pat = rearrange(s_x_pat, 'b n t d -> (b t) n d')
+            s_x_pat = s_x_pat + rearrange(time_encodings[0],'b t n d -> (b t) n d') if self.time_encoding else s_x_pat
             if self.spec_frames != self.num_frames:
                 exp = t // self.spec_frames
                 s_x_pat = s_x_pat.unsqueeze(1).expand([-1 , exp, -1, -1])
@@ -289,8 +290,9 @@ class CrossAttentionS2T(nn.Module):
             # t_x_pat = rearrange(t_x_pat, 'n (b t) d -> (b t) n d', t=t)
             # t_x_pat = t_x_pat + self.vmae_space_pos
             t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b n t d', t=t)
-            t_x_pat = t_x_pat + self.vmae_temporal_pos
+            t_x_pat = t_x_pat + self.vmae_temporal_pos if self.use_stpos else t_x_pat
             t_x_pat = rearrange(t_x_pat, 'b n t d -> (b t) n d')
+            t_x_pat = t_x_pat + rearrange(time_encodings[1],'b t n d -> (b t) n d') if self.time_encoding else t_x_pat
         else:
             # s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
             # s_x_pat = s_x_pat + self.clip_st_pos
@@ -410,17 +412,23 @@ class CrossAttentionT2S(nn.Module):
             # s_x_pat = rearrange(s_x_pat, 'n b d -> b n d') # batch -> token
             # s_x_pat = s_x_pat + self.clip_space_pos
             s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b n t d', t=self.spec_frames)
-            s_x_pat = s_x_pat + self.clip_temporal_pos
+            s_x_pat = s_x_pat + self.clip_temporal_pos if self.use_stpos else s_x_pat
             s_x_pat = rearrange(s_x_pat, 'b n t d -> (b t) n d')
+            # print('1',s_x_pat.shape, time_encodings[0].shape, time_encodings[1].shape)
+            s_x_pat = s_x_pat + rearrange(time_encodings[0],'b t n d -> (b t) n d') if self.time_encoding else s_x_pat
+            # print('2',s_x_pat.shape)
             if self.spec_frames != self.num_frames:
                 exp = t // self.spec_frames
-                s_x_pat = s_x_pat.unsqueeze(1).expand([-1 , t, -1, -1])
+                s_x_pat = s_x_pat.unsqueeze(1).expand([-1 , exp, -1, -1])
                 s_x_pat = rearrange(s_x_pat, 'b t n d -> (b t) n d')
             # t_x_pat = rearrange(t_x_pat, 'n (b t) d -> (b t) n d', t=t)
             # t_x_pat = t_x_pat + self.vmae_space_pos
             t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b n t d', t=t)
-            t_x_pat = t_x_pat + self.vmae_temporal_pos
+            t_x_pat = t_x_pat + self.vmae_temporal_pos if self.use_stpos else t_x_pat
             t_x_pat = rearrange(t_x_pat, 'b n t d -> (b t) n d')
+            # print('3',t_x_pat.shape)
+            t_x_pat = t_x_pat + rearrange(time_encodings[1],'b t n d -> (b t) n d') if self.time_encoding else t_x_pat
+            # print('4',t_x_pat.shape)
         else:
             # s_x_pat = rearrange(s_x_pat, 'n (b t) d -> b (n t) d', t=self.spec_frames) # batch -> token
             # s_x_pat = s_x_pat + self.clip_st_pos
@@ -535,12 +543,18 @@ class Block(nn.Module):
             if not self.after_Adapter:
                 self.cross_s_down = nn.Linear(dim, dim//self.down_ratio)
                 self.cross_t_down = nn.Linear(dim, dim//self.down_ratio)
+                # self.t2s_lateral = nn.Linear(196*8,470)
+                # self.s2t_lateral = nn.Linear(470,197)
+                # self.cross_s_down = nn.Identity()
+                # self.cross_t_down = nn.Identity()
                 self.ln_s_cross = norm_layer(dim//self.down_ratio)
                 self.ln_t_cross = norm_layer(dim//self.down_ratio)
                 self.t2s_cross = CrossAttentionT2S(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
                 self.s2t_cross = CrossAttentionS2T(dim//self.down_ratio, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
                 self.cross_s_up = nn.Linear(dim//self.down_ratio, dim)
                 self.cross_t_up = nn.Linear(dim//self.down_ratio, dim)
+                # self.cross_s_up = nn.Identity()
+                # self.cross_t_up = nn.Identity()
             else:
                 self.t2s_cross = CrossAttentionT2S(dim, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
                 self.s2t_cross = CrossAttentionS2T(dim, num_heads, num_frames, spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, audio_only=audio_only, time_encoding=time_encoding, spec_shape=spec_shape, video_patch=video_patch, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
@@ -625,6 +639,19 @@ class Block(nn.Module):
                 c_t_x = self.cross_t_up(self.act(a_t_x[0]))
                 s_x = s_x + self.drop_path(c_s_x)
                 t_x = t_x + self.drop_path(c_t_x)
+                
+                # n_s_x = rearrange(s_x, 'n b d -> b d n')
+                # n_s_x = self.s2t_lateral(n_s_x)
+                # n_s_x = n_s_x.unsqueeze(2).repeat(1,1,8,1)
+                # n_s_x = rearrange(n_s_x, 'b d t n-> n (b t) d')
+                # n_t_x = rearrange(t_x[1:,:,:], 'n (b t) d -> b d (n t)', t=8)
+                # n_t_x = self.t2s_lateral(n_t_x)
+                # n_t_x = rearrange(n_t_x, 'b d nt-> nt b d')
+                # n_s_x = self.cross_s_down(n_s_x)
+                # n_t_x = self.cross_t_down(n_t_x)
+                # # print(s_x.shape, t_x.shape, n_s_x.shape, n_t_x.shape)
+                # s_x = s_x + n_t_x
+                # t_x = t_x + n_s_x
             else:
                 a_s_x = self.t2s_cross(n_s_x, n_t_x, time_encodings, output_attentions=output_attentions)
                 a_t_x = self.s2t_cross(n_s_x, n_t_x, time_encodings, output_attentions=output_attentions)
@@ -757,12 +784,15 @@ class STCrossTransformer(nn.Module):
         # self.ast_pos_embed = nn.Parameter(torch.cat([self.ast_pos_embed[:, :2, :].detach(), new_pos_embed], dim=1))
         self.spec_shape=[f_dim, t_dim]
         self.audio_patch = self.ast_patch_embed.num_patches
+        print(f'model ast patch {self.audio_patch}, spec {self.spec_shape}, astposembed_shape {self.ast_pos_embed.shape}, {self.original_embedding_dim}')
+        print(f'patch test {torch.randn(1, 1, input_fdim, input_tdim).shape}, {new_proj}, {new_proj(torch.randn(1, 1, input_fdim, input_tdim)).shape}')
         ################################################################
         
         self.clip_conv1 = nn.Conv2d(in_channels=3, out_channels=embed_dim, kernel_size=patch_size, stride=patch_size, bias=False)
         self.clip_class_embedding = nn.Parameter(scale * torch.randn(embed_dim))
         self.clip_positional_embedding = nn.Parameter(scale * torch.randn((img_size // patch_size) ** 2 + 1, embed_dim))
         self.clip_ln_pre = LayerNorm(embed_dim)
+        # self.clip_ln_pre = nn.Identity()
 
         ###################################
         self.audio_only = audio_only
@@ -1060,6 +1090,34 @@ def single_ast_clip_vit_base_patch16_224(pretrained=False, **kwargs):
     return model
 
 @register_model
+def single_ast_clip_vit_base_CA12_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, CA=12, spec_frames=1, attn_all_frame=True, **kwargs)
+    return model
+
+@register_model
+def single_ast_clip_cat_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=False, **kwargs)
+    return model
+
+@register_model
+def single_ast_clip_down4_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=True, down_ratio=4, **kwargs)
+    return model
+
+@register_model
+def single_ast_clip_down1_vit_base_patch16_224(pretrained=False, **kwargs):
+    model = STCrossTransformer(
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=True, down_ratio=1, **kwargs)
+    return model
+
+@register_model
 def single_ast_only_vit_base_patch16_224(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
@@ -1084,11 +1142,10 @@ def single_ast_AIM_vit_base_patch16_224(pretrained=False, **kwargs):
     return model
 
 @register_model
-def test_test(pretrained=False, **kwargs):
+def single_ast_clip_vit_base_test(pretrained=False, **kwargs):
     model = STCrossTransformer(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, 
-        CA=9, spec_frames=1, attn_all_frame=True, down_ratio=1, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False, audio_enabled=True, CA=0, spec_frames=1, attn_all_frame=True, down_ratio=1, **kwargs)
     return model
 
 @register_model

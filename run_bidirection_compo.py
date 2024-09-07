@@ -256,7 +256,8 @@ def get_args():
     parser.add_argument('--pre_time_encoding', action='store_true', default=False)
     parser.add_argument('--split_time_mlp', action='store_true', default=False)
     parser.add_argument('--bcast_share', action='store_true', default=False)
-    
+    parser.add_argument('--imagenet',default=None, help='finetune from clip imagenet checkpoint')
+    parser.add_argument('--fixpatch', action='store_true', default=False)
     
     
     
@@ -414,14 +415,29 @@ def main(args, ds_init):
             'fusion_method': args.fusion_method
         }
     if args.audio_path is not None:
-        print(f"Audio_Patch size = {args.audio_height*args.audio_width//(args.window_size*args.window_size)}")
-        model_args['audio_patch'] = args.audio_height*args.audio_width//(args.window_size*args.window_size)
+        def get_shapes(fstride, tstride, input_fdim=128, input_tdim=1024, fshape=16, tshape=16):
+            test_input = torch.randn(1, 1, input_fdim, input_tdim)
+            test_proj = nn.Conv2d(1, 768, kernel_size=(fshape, tshape), stride=(fstride, tstride))
+            test_out = test_proj(test_input)
+            f_dim = test_out.shape[2]
+            t_dim = test_out.shape[3]
+            return f_dim, t_dim
+        if args.fixpatch:
+            f_dim, t_dim = get_shapes(args.stride, args.stride, args.audio_height, args.audio_width)
+            model_args['audio_patch'] = f_dim * t_dim
+            model_args['spec_shape'] = [f_dim, t_dim]
+        else:
+            f_dim, t_dim = args.audio_height//args.window_size, args.audio_width// args.window_size
+            model_args['audio_patch'] = f_dim * t_dim
+            model_args['spec_shape'] = [f_dim, t_dim]
+        print(f'stride {args.stride}, audio shape: {f_dim}, {t_dim}, patch : {f_dim * t_dim}')
+        # print(f"Audio_Patch size = {args.audio_height*args.audio_width//(args.window_size*args.window_size)}")
     if args.bcast_method is not None:
         print(f"bcast_method = {args.bcast_method}")
         model_args['bcast_method'] = args.bcast_method
     if args.time_encoding:
         model_args['time_encoding'] = args.time_encoding
-        model_args['spec_shape'] = [args.audio_height//args.window_size, args.audio_width//args.window_size]
+        # model_args['spec_shape'] = [args.audio_height//args.window_size, args.audio_width//args.window_size]
     if args.audio_only_finetune:
         model_args['audio_only_finetune'] = True
     if '_ast_' in args.vmae_model:
@@ -431,6 +447,7 @@ def main(args, ds_init):
         model_args['input_tdim'] = args.audio_width
     if args.enable_audio_stride:
         model_args['fstride'] = 10
+        model_args['tstride'] = 10
         fdim, tdim = int((args.audio_height-16)/10)+1, int((args.audio_width-16)/10)+1
         model_args['audio_patch'] = fdim * tdim
         model_args['spec_shape'] = [fdim, tdim]
@@ -561,7 +578,8 @@ def main(args, ds_init):
 
     print("criterion = %s" % str(criterion))
     print('number of params:', n_parameters)
-    print(f"Audio_Patch size = {args.audio_height*args.audio_width//(args.window_size*args.window_size)}")
+    if args.audio_path is not None:
+        print(f'stride {args.stride}, audio shape: {f_dim}, {t_dim}, patch : {f_dim * t_dim}')
     print("NoiseReduce On") if args.noisereduce else print("NoiseReduce Off")
     
     utils.auto_load_model(

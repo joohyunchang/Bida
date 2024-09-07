@@ -881,7 +881,7 @@ class Block(nn.Module):
             if self.num_layer in self.CA:
                 self.s_audio_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, audio_dim, audio_num_heads, drop_path, act_layer, norm_layer, type='s-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect, time_encoding=time_encoding, spec_shape=spec_shape, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
                 self.t_audio_b_cast = B_CAST(dim, num_heads, num_frames, down_ratio, audio_dim, audio_num_heads, drop_path, act_layer, norm_layer, type='t-audio', spec_frames=spec_frames, attn_all_frame=attn_all_frame, audio_patch=audio_patch, skip_connect=skip_connect ,time_encoding=time_encoding, spec_shape=spec_shape, time_embedding_type=time_embedding_type, use_stpos=use_stpos)
-            if bcast_share:
+            if bcast_share and self.num_layer in self.CA:
                 self.s_audio_b_cast.cross_l_down = self.s_t_b_cast.cross_l_down
                 self.t_audio_b_cast.cross_l_down = self.s_t_b_cast.cross_r_down
                 self.s_audio_b_cast.cross_r_down = self.t_audio_b_cast.cross_r_down

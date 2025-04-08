@@ -1,12 +1,12 @@
-# CAST: Cross-Attention in Space and Time for Video Action Recognition [[NeurIPS 2023](https://neurips.cc/virtual/2023/poster/70748)]
+# CA^2ST: Cross-Attention in Audio, Space, and Time for Holistic Video Recognition [[Arxiv](https://arxiv.org/abs/2503.23447)]
 
-![CAST Framework](figs/CAST.jpg)
+![CAST Framework](figs/CA2ST.png)
 
 
-![GitHub last commit](https://img.shields.io/github/last-commit/khuvll/CAST)<br>
+![GitHub last commit](https://img.shields.io/github/last-commit/joohyun7u/CA2ST)<br>
 ![Website Status](https://img.shields.io/website?url=https://jong980812.github.io/CAST.github.io/)<br>
-![GitHub issues](https://img.shields.io/github/issues-raw/khuvll/CAST)
-![GitHub closed issue](https://img.shields.io/github/issues-closed/khuvll/CAST)<br>
+![GitHub issues](https://img.shields.io/github/issues-raw/joohyun7u/CA2ST)
+![GitHub closed issue](https://img.shields.io/github/issues-closed/joohyun7u/CA2ST)<br>
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)<br>
 
 
@@ -16,18 +16,18 @@
 First, install PyTorch 1.10.0+ and torchvision 0.11.0.
 
 ```
-conda create -n vmae_1.10  python=3.8 ipykernel -y
-conda activate vmae_1.10
-conda install pytorch==1.10.0 torchvision==0.11.0 torchaudio==0.10.0 -c pytorch
+conda create -n cast  python=3.8 ipykernel -y
+conda activate cast
+conda install pytorch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pytorch-cuda=11.7 -c pytorch -c nvidia
 ```
 Then, install timm, triton, DeepSpeed, and others.
 ```
-pip install triton==1.0.0
-git clone https://github.com/microsoft/DeepSpeed
-cd DeepSpeed
-git checkout 3a3dfe66bb
-DS_BUILD_OPS=1 pip install . --global-option="build_ext"
-pip install TensorboardX decord einops scipy pandas requests
+pip install lit deepspeed-kernels
+DS_BUILD_OPS=1 DS_BUILD_SPARSE_ATTN=0 DS_BUILD_EVOFORMER_ATTN=0 pip install deepspeed==0.12.6 
+
+pip install timm==0.4.12  decord einops tensorboardX
+pip install --pre -U triton
+pip install TensorboardX decord einops scipy pandas requests opencv-python
 ds_report
 ```
 
@@ -156,7 +156,7 @@ python ./run_bidirection.py --fine_tune {YOUR_FINETUNED_WEIGHT} --eval
 ```
 ## Model Zoo
 
-### EPIC-KITCHENS-100
+<!-- ### EPIC-KITCHENS-100
 
 |  Method  | Spatial Expert | Temporal expert | Epoch | \#Frames x Clips x Crops |                          Fine-tune                           | Top-1 |
 | :------: | :------: | :------: | :---: | :-----: | :----------------------------------------------------------: | :---: |
@@ -171,7 +171,7 @@ python ./run_bidirection.py --fine_tune {YOUR_FINETUNED_WEIGHT} --eval
 
 |  Method  | Spatial Expert | Temporal expert | Epoch | \#Frames x Clips x Crops |                          Fine-tune                           | Top-1 |
 | :------: | :------: | :------: | :---: | :-----: | :----------------------------------------------------------: | :---: |
-| CAST |  [CLIP-B/16](https://openaipublic.azureedge.net/clip/models/5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f/ViT-B-16.pt)   | [VideoMAE-B/16 (pre-trained on K400)](https://drive.google.com/file/d/1MzwteHH-1yuMnFb8vRBQDvngV1Zl-d3z/view?usp=sharing) |  70  | 16x5x3  | [log](https://drive.google.com/file/d/1Npw-GblhSGWVx0nU06ztjDLMFcazeCx6/view?usp=sharing)/[checkpoint](https://drive.google.com/file/d/16ndsBVNjRuJMRM40P0-a3Q1JVA8tNLK7/view?usp=sharing)<br />| 85.3  |
+| CAST |  [CLIP-B/16](https://openaipublic.azureedge.net/clip/models/5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f/ViT-B-16.pt)   | [VideoMAE-B/16 (pre-trained on K400)](https://drive.google.com/file/d/1MzwteHH-1yuMnFb8vRBQDvngV1Zl-d3z/view?usp=sharing) |  70  | 16x5x3  | [log](https://drive.google.com/file/d/1Npw-GblhSGWVx0nU06ztjDLMFcazeCx6/view?usp=sharing)/[checkpoint](https://drive.google.com/file/d/16ndsBVNjRuJMRM40P0-a3Q1JVA8tNLK7/view?usp=sharing)<br />| 85.3  | -->
 
 
 ## Acknowledgements
@@ -184,9 +184,10 @@ This project is under the CC-BY-NC 4.0 license. See [LICENSE](https://github.com
 
 ## Citation
 ```
-@article{cast,
-  title={CAST: Cross-Attention in Space and Time for Video Action Recognition},
-  author={Lee, Dongho and Lee, Jongseo and Choi, Jinwoo},
-  booktitle={NeurIPS}},
-  year={2023}
+@article{lee20252st,
+  title={CA^2ST: Cross-Attention in Audio, Space, and Time for Holistic Video Recognition},
+  author={Lee, Jongseo and Chang, Joohyun and Lee, Dongho and Choi, Jinwoo},
+  journal={arXiv preprint arXiv:2503.23447},
+  year={2025}
+}
 ```

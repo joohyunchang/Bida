@@ -1,6 +1,5 @@
 import os
 import numpy as np
-from numpy.lib.function_base import disp
 import torch
 import decord
 from PIL import Image

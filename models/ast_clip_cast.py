@@ -244,14 +244,13 @@ class CrossAttentionS2T(nn.Module):
             self.clip_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
             self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim))) if not audio_only else self.clip_temporal_pos
         else:
-            # self.clip_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
-            # self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
             if self.use_stpos:
                 self.clip_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
                 self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((video_patch, dim)))
                 self.clip_temporal_pos = nn.Parameter(self.scale * torch.randn((spec_frames, dim)))
                 self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim))) if not audio_only else self.clip_temporal_pos
-            pass
+            # self.clip_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
+            # self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((video_patch * num_frames//2, dim)))
         if self.time_embedding_type:
             self.s2t_q = nn.Linear(dim, all_head_dim//2, bias=False)
             self.s2t_q_bias = nn.Parameter(torch.zeros(all_head_dim//2))
@@ -307,6 +306,7 @@ class CrossAttentionS2T(nn.Module):
             s_x_pat = rearrange(s_x_pat, 'b t n d -> b n t d')
             s_x_pat = s_x_pat + self.clip_temporal_pos if self.use_stpos else s_x_pat
             s_x_pat = rearrange(s_x_pat, 'b n t d -> b (n t) d')
+            # s_x_pat = s_x_pat + self.clip_st_pos
             t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b t n d', t=t)
             if self.time_embedding_type:
                 t_x_pat = torch.cat([t_x_pat,time_encodings[1]],dim=-1) if self.time_encoding else t_x_pat
@@ -316,6 +316,7 @@ class CrossAttentionS2T(nn.Module):
             t_x_pat = rearrange(t_x_pat, 'b t n d -> b n t d')
             t_x_pat = t_x_pat + self.vmae_temporal_pos if self.use_stpos else t_x_pat
             t_x_pat = rearrange(t_x_pat, 'b n t d -> b (n t) d')
+            # t_x_pat = t_x_pat + self.vmae_st_pos
         
         s2t_q = F.linear(input=t_x_pat, weight=self.s2t_q.weight, bias=self.s2t_q_bias)
         s2t_q = rearrange(s2t_q, 'b n (h d) -> b h n d', h=self.num_head)
@@ -375,7 +376,7 @@ class CrossAttentionT2S(nn.Module):
             self.vmae_temporal_pos = nn.Parameter(self.scale * torch.randn((num_frames//2, dim))) if not audio_only else self.clip_temporal_pos
         else:
             # self.clip_st_pos = nn.Parameter(self.scale * torch.randn((audio_patch * spec_frames, dim)))
-            # self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((196 * num_frames//2, dim)))
+            # self.vmae_st_pos = nn.Parameter(self.scale * torch.randn((video_patch * num_frames//2, dim)))
             if self.use_stpos:
                 self.clip_space_pos = nn.Parameter(self.scale * torch.randn((audio_patch, dim)))
                 self.vmae_space_pos = nn.Parameter(self.scale * torch.randn((video_patch, dim)))
@@ -443,6 +444,7 @@ class CrossAttentionT2S(nn.Module):
             s_x_pat = rearrange(s_x_pat, 'b t n d -> b n t d')
             s_x_pat = s_x_pat + self.clip_temporal_pos if self.use_stpos else s_x_pat
             s_x_pat = rearrange(s_x_pat, 'b n t d -> b (n t) d')
+            # s_x_pat = s_x_pat + self.clip_st_pos
             t_x_pat = rearrange(t_x_pat, 'n (b t) d -> b t n d', t=t)
             if self.time_embedding_type:
                 t_x_pat = torch.cat([t_x_pat,time_encodings[1]],dim=-1) if self.time_encoding else t_x_pat
@@ -452,6 +454,7 @@ class CrossAttentionT2S(nn.Module):
             t_x_pat = rearrange(t_x_pat, 'b t n d -> b n t d')
             t_x_pat = t_x_pat + self.vmae_temporal_pos if self.use_stpos else t_x_pat
             t_x_pat = rearrange(t_x_pat, 'b n t d -> b (n t) d')
+            # t_x_pat = t_x_pat + self.vmae_st_pos
         
         t2s_q = F.linear(input=s_x_pat, weight=self.t2s_q.weight, bias=self.t2s_q_bias)
         t2s_q = rearrange(t2s_q, 'b t (h d) -> b h t d', h=self.num_head)

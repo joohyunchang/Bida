@@ -414,6 +414,7 @@ def main(args, ds_init):
             'init_scale': args.init_scale,
             'fusion_method': args.fusion_method
         }
+    # args.fixpatch = True
     if args.audio_path is not None:
         def get_shapes(fstride, tstride, input_fdim=128, input_tdim=1024, fshape=16, tshape=16):
             test_input = torch.randn(1, 1, input_fdim, input_tdim)

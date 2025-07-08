@@ -729,6 +729,7 @@ class STCrossTransformer(nn.Module):
                  use_stpos=True,
                  pre_time_encoding=False,
                  split_time_mlp=False,
+                 for_calculate=False,
                  pretrained_cfg = None,
                  pretrained_cfg_overlay = None):
         super().__init__()
@@ -743,6 +744,9 @@ class STCrossTransformer(nn.Module):
         self.audio_patch = audio_patch
         self.spec_shape = spec_shape
         self.video_patch = (img_size // patch_size) ** 2
+        self.for_calculate = for_calculate
+        self.input_fdim = input_fdim
+        self.input_tdim = input_tdim
         
         scale = embed_dim ** -0.5
         
@@ -985,6 +989,10 @@ class STCrossTransformer(nn.Module):
         return s_x, t_x, all_self_attentions
 
     def forward(self, x, caption=None, spec=None, idx=None, output_attentions=None):
+        if self.for_calculate:
+            spec = torch.rand(x.shape[0], 1, self.input_fdim, self.input_tdim).to(dtype=x.dtype, device=x.device)
+            idx = torch.rand(x.shape[0], 2*(self.spec_frames + self.num_frames //2)).to(dtype=x.dtype, device=x.device)
+            self.use_spec_time = False
         time_encodings=None
         if self.time_encoding or self.pre_time_encoding:
             if not self.use_spec_time:
@@ -1243,3 +1251,93 @@ def compo_single_ast_clip_vit_late_fusion3_patch16_224(pretrained=False, **kwarg
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, audio_enabled=True, spec_frames=1, attn_all_frame=True,
         late_fusion=12, CA=12, use_Adapter=False, use_SA=False, use_MLP=False, **kwargs)
     return model
+
+
+if __name__== '__main__':
+    import time
+    from fvcore.nn import FlopCountAnalysis
+    from fvcore.nn import flop_count_table
+    import numpy as np
+    import torch
+
+
+    seed = 4217
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # num_frames = 16
+    num_frames = 32
+    img_size = 224
+    
+    audio_high, audio_width = 128, 400
+    f_dim, t_dim = audio_high // 16, audio_width // 16
+    stride = 10
+    model_args = {
+        'all_frames': num_frames,
+        'audio_patch' : f_dim * t_dim,
+        'spec_shape' :[f_dim, t_dim],
+        'time_encoding': True,
+        'use_stpos': False,
+        'fstride': stride,
+        'tstride': stride,
+        'input_fdim': audio_high,
+        'input_tdim': audio_width,
+        'for_calculate': True,
+        'split_time_mlp': True,
+        # 'bcast_share': True,
+    }
+    
+    # model = internvideo2_1B_patch14_224(num_classes=400).cuda().half()
+    model = single_ast_clip_vit_base_patch16_224(num_classes=400, **model_args).cuda().half()
+    model.eval()
+    print(model)
+
+    dummy_input = torch.rand(1, 3, num_frames, img_size, img_size).cuda().half()
+    flops = FlopCountAnalysis(model, dummy_input)
+    s = time.time()
+    
+    print(flop_count_table(flops, max_depth=1))
+    print(time.time()-s)
+    print("Num params: ", sum(p.numel() for p in model.parameters()))
+    
+    with torch.no_grad():
+    # 워밍업 (GPU 캐시 등 초기화)
+        for _ in range(10):
+            _ = model(dummy_input)
+
+        torch.cuda.synchronize()  # 동기화
+
+        # Latency 측정
+        start_time = time.time()
+        _ = model(dummy_input)
+        torch.cuda.synchronize()  # 다시 동기화
+        end_time = time.time()
+
+    latency_ms = (end_time - start_time) * 1000  # ms 단위로 변환
+    print(f"Latency: {latency_ms:.2f} ms")
+    
+    # 배치 크기 지정
+    batch_size = 32  # 또는 원하는 숫자
+    dummy_input = torch.randn(batch_size, 3, num_frames, img_size, img_size).cuda().half()
+
+    # 워밍업
+    with torch.no_grad():
+        for _ in range(10):
+            _ = model(dummy_input)
+
+        torch.cuda.synchronize()
+
+        # Throughput 측정
+        repeats = 30
+        start = time.time()
+        for _ in range(repeats):
+            _ = model(dummy_input)
+        torch.cuda.synchronize()
+        end = time.time()
+
+    elapsed_time = end - start
+    total_samples = batch_size * repeats
+    throughput = total_samples / elapsed_time
+
+    print(f"Throughput: {throughput:.2f} samples/sec")

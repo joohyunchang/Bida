@@ -91,7 +91,7 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         
         return [nounlist, noundict, nountoken, verblist, verbdict, verbtoken, actionlist, actiondict, actiontoken, seen_nounlist, seen_noundict]
     
-    elif dataset == 'EPIC':
+    elif dataset in ['HD_EPIC','EPIC']:
         noun_anno_path = os.path.join(data_path, 'epic100_noun_classes.csv')
         verb_anno_path = os.path.join(data_path, 'epic100_verb_classes.csv')
         action_anno_path = os.path.join(data_path, 'epic100_action_classes.csv')
@@ -362,3 +362,95 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
     torch.cuda.empty_cache()
     
     return [actionlist, actiondict, actiontoken]
+
+
+
+def dataset_class(dataset='HMDB51', data_path = None):
+
+    if dataset == 'HMDB51-feature-30fps-center':
+        meta = open("../data/HMDB51/HMDB51_action.list", 'rb')
+        actionlist = meta.readlines()
+        meta.close()
+        actionlist = np.array([a.decode('utf-8').split('\n')[0] for a in actionlist])
+        
+        return {'action':actionlist}
+
+    elif dataset in ['HD_EPIC','EPIC']:
+        noun_anno_path = os.path.join(data_path, 'epic100_noun_classes.csv')
+        verb_anno_path = os.path.join(data_path, 'epic100_verb_classes.csv')
+        action_anno_path = os.path.join(data_path, 'epic100_action_classes.csv')
+        noun_cleaned = pd.read_csv(noun_anno_path, header=None, delimiter=',')
+        verb_cleaned = pd.read_csv(verb_anno_path, header=None, delimiter=',')
+        action_cleaned = pd.read_csv(action_anno_path, header=None, delimiter=',')
+        nounlist = list(noun_cleaned.values[:, 0])
+        verblist = list(verb_cleaned.values[:, 0])
+        actionlist = list(action_cleaned.values[:, 0])
+        
+        return {'noun':nounlist, 'verb':verblist, 'action':actionlist}
+    
+    elif dataset == 'ActivityNet':
+        actionlist = list(range(200))
+        
+        return {'action':actionlist}
+    
+    elif dataset == 'SSV2':
+        action_anno_path = os.path.join(data_path, 'labels.json')
+        with open(action_anno_path, 'r') as f:
+            action_cleaned = json.load(f)
+            actionlist = list(action_cleaned.keys())
+        
+        return {'action':actionlist}
+    
+    elif dataset == 'Kinetics-400':
+        action_anno_path = os.path.join(data_path, 'kinetics400_labels.csv')
+        action_cleaned = pd.read_csv(action_anno_path, header=0, delimiter=',')
+        actionlist = list(action_cleaned.values[:, 1])
+        
+        return {'action':actionlist}
+    
+    elif dataset == 'Kinetics_sound':
+        actionlist = ['bowling', 'ripping paper', 'playing xylophone', 'playing organ', 'playing bass guitar',
+                        'tapping guitar',
+                        'playing accordion', 'playing guitar', 'dribbling basketball', 'playing piano', 'playing bagpipes',
+                        'playing saxophone', 'playing harmonica', 'tickling', 'blowing nose', 'tapping pen', 'chopping wood',
+                        'blowing out candles', 'tap dancing', 'stomping grapes', 'playing clarinet', 'laughing',
+                        'playing trombone', 'shoveling snow', 'playing trumpet', 'playing violin', 'singing', 'shuffling cards',
+                        'playing keyboard', 'mowing lawn', 'playing drums']
+        
+        return {'action':actionlist}
+    
+    elif dataset == 'EPIC_sounds':
+        actionlist = ['metal-only collision', 'scrub / scrape / scour / wipe', 'cut / chop', 'open / close', 'rustle','water',
+                      'plastic-only collision', 'footstep', 'stir / mix / whisk', 'slide object', 'metal / wood collision',
+                      'metal / plastic collision', 'metal / ceramic collision', 'background', 'ceramic-only collision', 'beep',
+                      'click', 'metal / glass collision', 'paper-only collision', 'pour', 'glass-only collision', 'wood-only collision',
+                      'plastic / paper collision', 'metal / paper collision', 'human', 'metal / cloth collision', 'plastic / ceramic collision',
+                      'plastic / wood collision', 'metal / marble collision','sizzling / boiling', 'ceramic / glass collision', 
+                      'plastic / marble collision', 'plastic / glass collision', 'kettle / mixer / appliance', 'ceramic / wood collision', 
+                      'kneading', 'cloth-only collision', 'ceramic / marble collision', 'glass / marble collision', 'wood / glass collision',
+                      'hoover / fan', 'spray', 'zip', 'drink / eat']
+        
+        return {'action':actionlist}
+    
+    elif dataset == 'UCF101':
+        action_anno_path = os.path.join(data_path, 'classInd.txt')
+        action_cleaned = pd.read_csv(action_anno_path, header=None, names=['1', '2'], delim_whitespace=True)
+        actionlist = list(action_cleaned.values[:, 1])
+        
+        return {'action':actionlist}
+    
+    elif dataset == 'VGGSound':
+        action_anno_path = os.path.join(data_path, 'label.csv')
+        action_cleaned = pd.read_csv(action_anno_path, header=None, names=['1'])
+        actionlist = list(action_cleaned.values[:, 0])
+        
+        return {'action':actionlist}
+    
+    elif dataset == 'diving-48':
+        anno_path = os.path.join(data_path, 'class.csv')
+        cleaned = pd.read_csv(anno_path, header=None, delimiter=',')
+        actionlist = list(cleaned.values[:, 4])
+        
+        return {'action':actionlist}
+    
+    return {'action':actionlist}

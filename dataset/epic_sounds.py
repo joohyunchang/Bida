@@ -58,6 +58,8 @@ class EpicSoundsVideoClsDataset(Dataset):
           import pickle
           cleaned = pd.read_csv(self.anno_path, header=0, delimiter=',')
           cleaned = cleaned[cleaned['annotation_id'] != 'P01_03_22']
+          if getattr(args, 'debug', False):
+               cleaned = cleaned[:200]
           self.dataset_samples = list(cleaned.values[:, 0])
           self.label_array = list(cleaned.values[:, 9]) # action
           self.audio_samples = {cleaned.iloc[i, 0]: cleaned.iloc[i, 12:14] for i in range(len(cleaned))}
@@ -213,7 +215,7 @@ class EpicSoundsVideoClsDataset(Dataset):
                     else:
                          audio_sample = os.path.join(self.audio_path, self.test_dataset[index] + '.wav')
                          # (2*chunk_nb+1)/(self.test_num_segment * 2)
-                         spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set, return_index=True)
+                         spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set, return_index=True, add_something=getattr(self.args,'ablation_eval',None))
                else:
                     spec = {}
                

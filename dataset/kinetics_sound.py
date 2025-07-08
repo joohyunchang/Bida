@@ -217,7 +217,7 @@ class K400VidAudClsDataset(Dataset):
                     audio_id = self.test_dataset[index]
                     audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
                     try:
-                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set, return_index=True)
+                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set, return_index=True, add_something=getattr(self.args,'ablation_eval',None))
                     except Exception as e:
                         warnings.warn("audio {} not correctly loaded during testing, {}".format(audio_sample, self.dataset_samples[index]))
                         warnings.warn(e)

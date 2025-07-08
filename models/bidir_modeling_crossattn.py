@@ -756,3 +756,76 @@ def compo_bidir_vit_large_224(pretrained=False, **kwargs):
         patch_size=14, vmae_patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
     return model
+
+
+if __name__== '__main__':
+    import time
+    from fvcore.nn import FlopCountAnalysis
+    from fvcore.nn import flop_count_table
+    import numpy as np
+    import torch
+
+
+    seed = 4217
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    num_frames = 16
+    img_size = 224
+    
+    
+    
+    # model = internvideo2_1B_patch14_224(num_classes=400).cuda().half()
+    model = bidir_vit_base_patch16_224(num_classes=400).cuda().half()
+    model.eval()
+    print(model)
+
+    dummy_input = torch.rand(1, 3, num_frames, img_size, img_size).cuda().half()
+    flops = FlopCountAnalysis(model, dummy_input)
+    s = time.time()
+    
+    print(flop_count_table(flops, max_depth=1))
+    print(time.time()-s)
+    print("Num params: ", sum(p.numel() for p in model.parameters()))
+    
+    with torch.no_grad():
+    # 워밍업 (GPU 캐시 등 초기화)
+        for _ in range(10):
+            _ = model(dummy_input)
+
+        torch.cuda.synchronize()  # 동기화
+
+        # Latency 측정
+        start_time = time.time()
+        _ = model(dummy_input)
+        torch.cuda.synchronize()  # 다시 동기화
+        end_time = time.time()
+
+    latency_ms = (end_time - start_time) * 1000  # ms 단위로 변환
+    print(f"Latency: {latency_ms:.2f} ms")
+    
+    # 배치 크기 지정
+    batch_size = 32  # 또는 원하는 숫자
+    dummy_input = torch.randn(batch_size, 3, num_frames, img_size, img_size).cuda().half()
+
+    # 워밍업
+    with torch.no_grad():
+        for _ in range(10):
+            _ = model(dummy_input)
+
+        torch.cuda.synchronize()
+
+        # Throughput 측정
+        repeats = 30
+        start = time.time()
+        for _ in range(repeats):
+            _ = model(dummy_input)
+        torch.cuda.synchronize()
+        end = time.time()
+
+    elapsed_time = end - start
+    total_samples = batch_size * repeats
+    throughput = total_samples / elapsed_time
+
+    print(f"Throughput: {throughput:.2f} samples/sec")

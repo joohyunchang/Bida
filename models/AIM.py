@@ -590,3 +590,146 @@ def no_compo_aim_adapter_vit_large_patch14_224(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=False,use_adapter=True,**kwargs)
     #model.default_cfg = _cfg()
     return model
+
+from transformers import VideoMAEForVideoClassification, CLIPModel, ASTForAudioClassification, ASTConfig, ASTModel
+
+class VideoCLIPWithHead(nn.Module):
+    def __init__(self, num_classes=400, feature_agg='mean'):
+        super().__init__()
+        # load CLIP vision backbone
+        model = CLIPModel.from_pretrained('openai/clip-vit-base-patch16', use_safetensors=True)
+        self.clip_vision = model.vision_model
+        self.head = nn.Linear(self.clip_vision.config.hidden_size, num_classes)
+        self.feature_agg = feature_agg  # 'mean' or 'sum'
+    
+    def get_num_layers(self):
+        return len(self.clip_vision.encoder.layers)
+    
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {'embeddings'}
+
+    def forward(self, x, **kwargs):  # x: [B, C, T, H, W]
+        B, C, T, H, W = x.shape
+        # (1) Frame 단위로 CLIP backbone 통과 (batch concat)
+        x = x.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)  # [B*T, C, H, W]
+        outputs = self.clip_vision(pixel_values=x, return_dict=True)
+        features = outputs.pooler_output  # [B*T, D]
+        features = features.view(B, T, -1)  # [B, T, D]
+        # (2) 모든 frame feature를 sum/mean pooling
+        if self.feature_agg == 'mean':
+            vid_feat = features.mean(dim=1)
+        elif self.feature_agg == 'sum':
+            vid_feat = features.sum(dim=1)
+        else:
+            raise NotImplementedError
+        out = self.head(vid_feat)  # [B, num_classes]
+        return out
+    
+class VideoMAEWithHead(nn.Module):
+    def __init__(self, num_classes=400):
+        super().__init__()
+        self.model = VideoMAEForVideoClassification.from_pretrained(
+            'MCG-NJU/videomae-base-finetuned-kinetics')
+        self.model.classifier = torch.nn.Linear(self.model.classifier.in_features, num_classes)
+        
+    def get_num_layers(self):
+        return len(self.model.videomae.encoder.layer)
+    
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {'embeddings'}
+
+    def forward(self, x, **kwargs):  # x: [B, C, T, H, W]
+        outputs = self.model(pixel_values=x.permute(0, 2, 1, 3, 4), return_dict=True) # [B, num_classes]
+        out = outputs.logits  # [B, num_classes]
+        return out
+
+@register_model
+def clip_model(pretrained=False, **kwargs):
+    print('num_classes = %s' % kwargs.get('num_classes', None))
+    model = VideoCLIPWithHead(num_classes=kwargs.get('num_classes', 400), feature_agg='mean')
+    return model
+
+@register_model
+def videomae_v1_model(pretrained=False, **kwargs):
+    model = VideoMAEWithHead(num_classes=kwargs.get('num_classes', 400))
+    return model
+
+
+if __name__== '__main__':
+    import time
+    from fvcore.nn import FlopCountAnalysis
+    from fvcore.nn import flop_count_table
+    import numpy as np
+    import torch
+
+
+    seed = 4217
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    num_frames = 16
+    img_size = 224
+    
+    # model = internvideo2_1B_patch14_224(num_classes=400).cuda().half()
+    # model = aim_adapter_vit_base_patch16_224(num_classes=400).cuda().half()
+    # model = clip_model(num_classes=400).cuda().half()
+    model = videomae_v1_model(num_classes=400).cuda().half()
+    # model = ASTForAudioClassification.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593", attn_implementation="sdpa", torch_dtype=torch.float16).cuda()
+    # model = ASTModel(ASTConfig(max_length=128, num_mel_bins=400)).cuda().half()
+    # model = ASTModel(ASTConfig()).cuda().half()
+    model.eval()
+    print(model)
+
+    dummy_input = torch.rand(1, 3, num_frames, img_size, img_size).cuda().half()
+    # dummy_input = torch.rand(1, 128, 400).cuda().half()
+    # dummy_input = torch.rand(1, 1024, 128).cuda().half()
+    flops = FlopCountAnalysis(model, dummy_input)
+    s = time.time()
+    
+    print(flop_count_table(flops, max_depth=1))
+    print(time.time()-s)
+    print("Num params: ", sum(p.numel() for p in model.parameters()))
+    
+    with torch.no_grad():
+    # 워밍업 (GPU 캐시 등 초기화)
+        for _ in range(10):
+            _ = model(dummy_input)
+
+        torch.cuda.synchronize()  # 동기화
+
+        # Latency 측정
+        start_time = time.time()
+        _ = model(dummy_input)
+        torch.cuda.synchronize()  # 다시 동기화
+        end_time = time.time()
+
+    latency_ms = (end_time - start_time) * 1000  # ms 단위로 변환
+    print(f"Latency: {latency_ms:.2f} ms")
+    
+    # 배치 크기 지정
+    batch_size = 32  # 또는 원하는 숫자
+    dummy_input = torch.randn(batch_size, 3, num_frames, img_size, img_size).cuda().half()
+
+    # 워밍업
+    with torch.no_grad():
+        for _ in range(10):
+            _ = model(dummy_input)
+
+        torch.cuda.synchronize()
+
+        # Throughput 측정
+        repeats = 30
+        start = time.time()
+        for _ in range(repeats):
+            _ = model(dummy_input)
+        torch.cuda.synchronize()
+        end = time.time()
+
+    elapsed_time = end - start
+    total_samples = batch_size * repeats
+    throughput = total_samples / elapsed_time
+
+    print(f"Throughput: {throughput:.2f} samples/sec")

@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import deepspeed
 import numpy as np
 import time
 import torch
@@ -18,9 +19,27 @@ from timm.utils import ModelEma
 from util_tools.optim_factory import create_optimizer, get_parameter_groups, LayerDecayValueAssigner
 
 from dataset.datasets import build_dataset
-from util_tools.utils import NativeScalerWithGradNormCount as NativeScaler, load_bidir_weights, freeze_block, unfreeze_block, read_alpha, focal_loss
+from util_tools.utils import NativeScalerWithGradNormCount as NativeScaler, load_bidir_weights, unfreeze_block, freeze_block_list
 from util_tools.utils import cross_multiple_samples_collate, notice_message, laod_eval_weights
 import util_tools.utils as utils
+import models.bidir_modeling_after_crossattn
+import models.bidir_modeling_crossattn
+import models.bidir_aim_modeling_crossattn
+import models.bidir_modeling_crossattn_concat
+import models.cast_square
+import models.cast_bisquare
+import models.cast_Bsquare
+import models.ast_Bsquare
+import models.AIM_cls
+import models.audio_cast
+import models.audio_only
+import models.audio_clip_cast
+import models.ast_clip_cast
+import models.ast_vmae_cast
+import models.beats_clip_cast
+import models.beats_Bsquare
+import pandas as pd
+
 
 def get_args():
     parser = argparse.ArgumentParser('VideoMAE fine-tuning and evaluation script for video classification', add_help=False)

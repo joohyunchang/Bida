@@ -38,8 +38,10 @@ import models.ast_clip_cast
 import models.ast_vmae_cast
 import models.beats_clip_cast
 import models.beats_Bsquare
-from models.prompt import text_prompt
+from models.prompt import text_prompt, dataset_class
 import pandas as pd
+from timm.models.registry import register_model
+from transformers import VideoMAEForVideoClassification, CLIPModel
 # from models.paraphrase import paraphrase
 
 
@@ -49,6 +51,7 @@ def get_args():
     parser.add_argument('--epochs', default=30, type=int)
     parser.add_argument('--update_freq', default=1, type=int)
     parser.add_argument('--save_ckpt_freq', default=100, type=int)
+    parser.add_argument('--debug', action='store_true', default=False)
 
     # Model parameters
     parser.add_argument('--vmae_model', default='vit_base_patch16_224', type=str, metavar='MODEL',
@@ -170,7 +173,7 @@ def get_args():
     parser.add_argument('--num_segments', type=int, default= 1)
     parser.add_argument('--num_frames', type=int, default= 16)
     parser.add_argument('--sampling_rate', type=int, default= 4)
-    parser.add_argument('--data_set', default='Kinetics-400', choices=['EPIC_dense','diving-48','Kinetics-400', 'SSV2','MINI_SSV2', 'UCF101', 'HMDB51','image_folder', 'EPIC','Kinetics_sound', 'EPIC_sounds','VGGSound'],
+    parser.add_argument('--data_set', default='Kinetics-400', choices=['ActivityNet','HD_EPIC','EPIC_dense','diving-48','Kinetics-400', 'SSV2','MINI_SSV2', 'UCF101', 'HMDB51','image_folder', 'EPIC','Kinetics_sound', 'EPIC_sounds','VGGSound'],
                         type=str, help='dataset')
     parser.add_argument('--pred_type', default=None, choices=['noun', 'verb', 'action'])
     parser.add_argument('--output_dir', default='',
@@ -256,11 +259,75 @@ def get_args():
     parser.add_argument('--pre_time_encoding', action='store_true', default=False)
     parser.add_argument('--split_time_mlp', action='store_true', default=False)
     parser.add_argument('--bcast_share', action='store_true', default=False)
-    parser.add_argument('--imagenet',default=None, help='finetune from clip imagenet checkpoint')
+    parser.add_argument('--imagenet', default=None, help='finetune from clip imagenet checkpoint')
     parser.add_argument('--fixpatch', action='store_true', default=False)
+    parser.add_argument('--videomae_v2', action='store_true', default=False, help='finetune from VideMAE V2 checkpoint')
+    parser.add_argument('--ablation_eval', default=None, choices=['white_noise','pink_noise','missing','time_shift','msa_add'],
+                        type=str, help='ablation_eval')
+    parser.add_argument('--disable_load_weights', action='store_true', default=False)
     
+    class VideoCLIPWithHead(nn.Module):
+        def __init__(self, num_classes=400, feature_agg='mean'):
+            super().__init__()
+            # load CLIP vision backbone
+            model = CLIPModel.from_pretrained('openai/clip-vit-base-patch16', use_safetensors=True)
+            self.clip_vision = model.vision_model
+            self.head = nn.Linear(self.clip_vision.config.hidden_size, num_classes)
+            self.feature_agg = feature_agg  # 'mean' or 'sum'
+        
+        def get_num_layers(self):
+            return len(self.clip_vision.encoder.layers)
+        
+        @torch.jit.ignore
+        def no_weight_decay(self):
+            return {'embeddings'}
+
+        def forward(self, x, **kwargs):  # x: [B, C, T, H, W]
+            B, C, T, H, W = x.shape
+            # (1) Frame 단위로 CLIP backbone 통과 (batch concat)
+            x = x.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)  # [B*T, C, H, W]
+            outputs = self.clip_vision(pixel_values=x, return_dict=True)
+            features = outputs.pooler_output  # [B*T, D]
+            features = features.view(B, T, -1)  # [B, T, D]
+            # (2) 모든 frame feature를 sum/mean pooling
+            if self.feature_agg == 'mean':
+                vid_feat = features.mean(dim=1)
+            elif self.feature_agg == 'sum':
+                vid_feat = features.sum(dim=1)
+            else:
+                raise NotImplementedError
+            out = self.head(vid_feat)  # [B, num_classes]
+            return out
+        
+    class VideoMAEWithHead(nn.Module):
+        def __init__(self, num_classes=400):
+            super().__init__()
+            self.model = VideoMAEForVideoClassification.from_pretrained(
+                'MCG-NJU/videomae-base-finetuned-kinetics')
+            self.model.classifier = torch.nn.Linear(self.model.classifier.in_features, num_classes)
+            
+        def get_num_layers(self):
+            return len(self.model.videomae.encoder.layer)
+        
+        @torch.jit.ignore
+        def no_weight_decay(self):
+            return {'embeddings'}
+
+        def forward(self, x, **kwargs):  # x: [B, C, T, H, W]
+            outputs = self.model(pixel_values=x.permute(0, 2, 1, 3, 4), return_dict=True) # [B, num_classes]
+            out = outputs.logits  # [B, num_classes]
+            return out
     
+    @register_model
+    def clip_model(pretrained=False, **kwargs):
+        print('num_classes = %s' % kwargs.get('num_classes', None))
+        model = VideoCLIPWithHead(num_classes=kwargs.get('num_classes', 400), feature_agg='mean')
+        return model
     
+    @register_model
+    def videomae_v1_model(pretrained=False, **kwargs):
+        model = VideoMAEWithHead(num_classes=kwargs.get('num_classes', 400))
+        return model
 
     known_args, _ = parser.parse_known_args()
 
@@ -465,8 +532,11 @@ def main(args, ds_init):
     before_n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('Before Freeze number of params:', before_n_parameters)
     
-    freeze_list = freeze_block_list(model,args.unfreeze_layers)
-    if args.fine_tune is not None:
+    if not getattr(args,'vmae_model', False) in ['videomae_v1_model', 'clip_model']:
+        freeze_list = freeze_block_list(model,args.unfreeze_layers)
+    if getattr(args,'disable_load_weights', False) is True:
+        print("Disable load weights")
+    elif args.fine_tune is not None:
         laod_eval_weights(model, args.fine_tune, args)
     else:
         load_bidir_weights(model, args, freeze_list=freeze_list)
@@ -484,7 +554,10 @@ def main(args, ds_init):
     #     model.load_state_dict(audio_key, strict=False)
         
     ###### VMAE 검증을 위해 freeze는 잠시 꺼둔다 #############
-    if args.unfreeze_layers is not None:
+    if getattr(args,'vmae_model', False) in ['videomae_v1_model', 'clip_model']:
+        for param in model.parameters():
+            param.requires_grad = True
+    elif args.unfreeze_layers is not None:
         model, unfreeze_list = unfreeze_block(model,args.unfreeze_layers)
         print('unfreeze list :', unfreeze_list)
     # with torch.no_grad():#! module_layers에 들어가는 것만 한다. 
@@ -603,7 +676,8 @@ def main(args, ds_init):
             if not args.eval_result:
                 test_stats = final_test(args, data_loader_test, model, device, preds_file)
             torch.distributed.barrier()
-            class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
+            # class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
+            class_list = dataset_class(dataset=args.data_set, data_path=args.anno_path)
             if global_rank == 0:
                 print("Start merging results...")
                 if args.composition:
@@ -620,10 +694,10 @@ def main(args, ds_init):
                     
                     # ======== save prediction result ======== #
                     video_ids = [''.join(x).replace(' ','') for x in video_ids]
-                    pred_noun = [class_list[0][i] for i in pred_noun]
-                    pred_verb = [class_list[3][i] for i in pred_verb]
-                    label_noun = [class_list[0][int(i)] for i in label_noun]
-                    label_verb = [class_list[3][int(i)] for i in label_verb]
+                    pred_noun = [class_list['noun'][i] for i in pred_noun]
+                    pred_verb = [class_list['verb'][i] for i in pred_verb]
+                    label_noun = [class_list['noun'][int(i)] for i in label_noun]
+                    label_verb = [class_list['verb'][int(i)] for i in label_verb]
                     pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf_verb':conf_verb, 'conf_noun':conf_noun})
                     pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
                     pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']).round(4), (pred_df['conf_noun']).round(4)
@@ -660,8 +734,8 @@ def main(args, ds_init):
                     
                     # ======== save prediction result ======== #
                     video_ids = [''.join(x).replace(' ','') for x in video_ids]
-                    pred = [class_list[0][i] for i in pred]
-                    label = [class_list[0][int(i)] for i in label]
+                    pred = [class_list['action'][i] for i in pred]
+                    label = [class_list['action'][int(i)] for i in label]
                     pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'conf':conf})
                     pred_df['conf'] = (pred_df['conf']).round(4)
                     pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)
@@ -780,7 +854,8 @@ def main(args, ds_init):
         torch.distributed.barrier()
         if global_rank == 0:
             print("Start merging results...")
-            class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
+            # class_list = text_prompt(dataset=args.data_set, data_path=args.anno_path, clipbackbone=args.clip_finetune, device=device)
+            class_list = dataset_class(dataset=args.data_set, data_path=args.anno_path)
             if args.composition:
                 final_top1_action ,final_top5_action, final_top1_noun, final_top5_noun, final_top1_verb, final_top5_verb, pred_noun, pred_verb, label_noun, label_verb, video_ids, conf_noun, conf_verb = merge(args.output_dir, num_tasks, return_result=True)
                 print(f"Accuracy of the network on the {len(dataset_test)} test videos: Top-1 Action: {final_top1_action:.2f}%, Top-5 Action: {final_top5_action:.2f}%")
@@ -799,10 +874,10 @@ def main(args, ds_init):
         
                 # ======== save prediction result ======== #
                 video_ids = [''.join(x).replace(' ','') for x in video_ids]
-                pred_noun = [class_list[0][i] for i in pred_noun]
-                pred_verb = [class_list[3][i] for i in pred_verb]
-                label_noun = [class_list[0][int(i)] for i in label_noun]
-                label_verb = [class_list[3][int(i)] for i in label_verb]
+                pred_noun = [class_list['noun'][i] for i in pred_noun]
+                pred_verb = [class_list['verb'][i] for i in pred_verb]
+                label_noun = [class_list['noun'][int(i)] for i in label_noun]
+                label_verb = [class_list['verb'][int(i)] for i in label_verb]
                 pred_df = pd.DataFrame({'video_id':video_ids, 'verb':pred_verb, 'noun':pred_noun, 'label_verb':label_verb, 'label_noun':label_noun, 'conf_verb':conf_verb, 'conf_noun':conf_noun})
                 pred_df['action'] = pred_df['verb'] + ' ' + pred_df['noun']
                 pred_df['conf_verb'], pred_df['conf_noun'] = (pred_df['conf_verb']).round(4), (pred_df['conf_noun']).round(4)
@@ -842,8 +917,8 @@ def main(args, ds_init):
                 
                 # ======== save prediction result ======== #
                 video_ids = [''.join(x).replace(' ','') for x in video_ids]
-                pred = [class_list[0][i] for i in pred]
-                label = [class_list[0][int(i)] for i in label]
+                pred = [class_list['action'][i] for i in pred]
+                label = [class_list['action'][int(i)] for i in label]
                 pred_df = pd.DataFrame({'video_id':video_ids, 'pred':pred, 'label':label, 'conf':conf})
                 pred_df['conf'] = (pred_df['conf']).round(4)
                 pred_df.to_csv(os.path.join(args.output_dir + "/../", 'pred_result.csv'), index=False)

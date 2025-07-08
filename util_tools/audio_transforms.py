@@ -232,7 +232,35 @@ class Spectrogram:
             spec = spec.unsqueeze(0).repeat(3, 1, 1)
         return spec
         
-    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', audio_centra=1/2, mode=None, data_set='EPIC', extract=False, device='cpu', use_all_wav=False,return_index=False):
+    @staticmethod
+    def add_snr_noise(wave, snr_db, noise_type="white", sr=24000):
+        """
+        wave: (C, L) tensor in [-1, 1]
+        snr_db: target SNR in dB (0, 10, 20 …)
+        noise_type: "white" | "pink" | path/to/noise.wav
+        """
+        # ① 잡음 소스
+        if noise_type == "white":
+            noise = torch.randn_like(wave)
+        elif noise_type == "pink":
+            noise = torchaudio.functional.equalizer_biquad(
+                torch.randn_like(wave), sr, center_freq=500, gain=10, Q=0.7
+            )
+        else:  # file
+            noise, _ = torchaudio.load(noise_type)
+            noise = noise[:, : wave.shape[-1]]  # crop/pad
+        # ② 스케일링
+        sig_power = wave.pow(2).mean()
+        noise_power = noise.pow(2).mean()
+        factor = torch.sqrt(sig_power / (10 ** (snr_db / 10) * noise_power))
+        return wave + factor * noise
+    
+    @staticmethod
+    def time_shift(wave, shift_sec, sr):
+        shift = int(shift_sec * sr)
+        return torch.roll(wave, shifts=shift, dims=-1)
+
+    def loadaudio(self, sample, start_frame, stop_frame, resampling_rate=24000, audio_type='stack', audio_centra=1/2, mode=None, data_set='EPIC', extract=False, device='cpu', use_all_wav=False,return_index=False, add_something=None):
         if isinstance(sample, str):
             samples, sample_rate = torchaudio.load(sample)
             if samples.shape[0] != 1:
@@ -262,6 +290,30 @@ class Spectrogram:
             right_sample = len(samples)
         length_sample = right_sample - left_sample
         length = int(round(self.sec*sample_rate))
+        
+        # for ablation study
+        if add_something == 'white_noise':
+            snr_db = np.random.uniform(0, 20)
+            samples = self.add_snr_noise(samples, snr_db, noise_type="white", sr=sample_rate)
+        elif add_something == 'pink_noise':
+            snr_db = np.random.uniform(0, 20)
+            samples = self.add_snr_noise(samples, snr_db, noise_type="pink", sr=sample_rate)
+        elif add_something == 'time_shift':
+            shift_sec = np.random.uniform(-2, 2)
+            samples = self.time_shift(samples, shift_sec, sample_rate)
+        elif add_something == 'missing':
+            # if np.random.rand() < 0.5:
+            #     # (1) 전체 mute
+            #     samples = torch.zeros_like(samples)
+            # else:
+            # (2) 구간 mute – 길이의 20~50%를 0으로
+            length = samples.shape[-1]
+            # seg_len = int(length * np.random.uniform(0.3, 0.7))
+            seg_len = int(length * 0.15)
+            start = np.random.randint(0, length - seg_len)
+            samples[start:start + seg_len] = 0
+            pass
+        
         if self.process_type == 'ast':
             samples = samples[left_sample:right_sample]
             idx = [0, len(samples)/sample_rate]

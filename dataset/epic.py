@@ -45,6 +45,7 @@ class EpicVideoClsDataset(Dataset):
           if VideoReader is None:
                raise ImportError("Unable to import `decord` which is required to read videos.")
           if self.audio_path is not None:
+               self.audio_extension = '.wav'
                self.audio_type = args.audio_type
                self.realtime_audio = args.realtime_audio
                self.autosave_spec = args.autosave_spec
@@ -112,21 +113,21 @@ class EpicVideoClsDataset(Dataset):
                     audio_trim_path = os.path.join(self.audio_path,'../spec', self.audio_type, self.dataset_samples[index] + '.npy')
                     audio_trim_path = audio_trim_path.replace("single", "stacks") if self.audio_type == 'single' else audio_trim_path
                     audio_trim_path = audio_trim_path.replace("singles", "stackss") if self.audio_type == 'singles' else audio_trim_path
-                    if not os.path.exists(os.path.join(self.audio_path,'spec', self.audio_type)):
-                         os.makedirs(os.path.join(self.audio_path,'spec', self.audio_type), exist_ok=True)
                     if os.path.exists(audio_trim_path) and not self.realtime_audio:
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                          if args.spec_augment:
                               spec = self.spectrogram.spec_augment(spec)
                     else:
                          # audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
-                         # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
-                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + '.wav')
+                         # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + self.audio_extension)
+                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + self.audio_extension)
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          try:
                               spec, idx = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=random.random(), audio_type=self.audio_type, data_set=self.data_set, mode=self.mode, return_index=True)
                               if not self.realtime_audio and self.autosave_spec:
+                                   if not os.path.exists(os.path.join(self.audio_path,'spec', self.audio_type)):
+                                        os.makedirs(os.path.join(self.audio_path,'spec', self.audio_type), exist_ok=True)
                                    try:
                                         save_spec = spec[0].detach()
                                         save_spectrogram_npy(audio_trim_path, save_spec)
@@ -181,8 +182,8 @@ class EpicVideoClsDataset(Dataset):
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
                          # audio_id = '_'.join(self.dataset_samples[index].split('_')[:-1])
-                         # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
-                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + '.wav')
+                         # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + self.audio_extension)
+                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + self.audio_extension)
                          start_frame = self.audio_samples[self.dataset_samples[index]]['start_frame']
                          end_frame = self.audio_samples[self.dataset_samples[index]]['stop_frame']
                          spec, idx = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_type=self.audio_type, data_set=self.data_set, return_index=True)
@@ -223,12 +224,17 @@ class EpicVideoClsDataset(Dataset):
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
                          # audio_id = '_'.join(self.test_dataset[index].split('_')[:-1])
-                         # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + '.wav')
-                         audio_sample = os.path.join(self.audio_path, self.test_dataset[index] + '.wav')
+                         # audio_sample = os.path.join(self.audio_path, 'wav', audio_id + self.audio_extension)
+                         audio_sample = os.path.join(self.audio_path, self.test_dataset[index] + self.audio_extension)
                          start_frame = self.audio_samples[self.test_dataset[index]]['start_frame']
                          end_frame = self.audio_samples[self.test_dataset[index]]['stop_frame']
                          # (2*chunk_nb+1)/(self.test_num_segment * 2)
-                         spec, idx = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set, return_index=True)
+                         try:
+                              spec, idx = self.spectrogram.loadaudio(audio_sample, start_frame, end_frame, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set, return_index=True)
+                         except Exception as e:
+                              warnings.warn("audio {} not correctly loaded during testing, {}".format(audio_sample, self.test_dataset[index]))
+                              warnings.warn(e)
+                              spec = {}
                else:
                     spec = {}
                
@@ -240,10 +246,11 @@ class EpicVideoClsDataset(Dataset):
                     return torch.tensor([1]), self.test_label_array[index], sample.split("/")[-1].split(".")[0], chunk_nb, split_nb, spec, caption, all_idx
 
                while len(buffer) == 0:
-                    warnings.warn("video {}, temporal {}, spatial {} not found during testing".format(\
-                    str(self.test_dataset[index]), chunk_nb, split_nb))
+                    warnings.warn("video {}, temporal {}, spatial {} not found during testing {}".format(\
+                    str(self.test_dataset[index]), chunk_nb, split_nb, sample))
                     index = np.random.randint(self.__len__())
-                    sample = self.test_dataset[index]
+                    sample = self.test_dataset[index] + '.mp4'
+                    sample = os.path.join(self.data_path, sample)
                     chunk_nb, split_nb = self.test_seg[index]
                     buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
 
@@ -401,6 +408,119 @@ class EpicVideoClsDataset(Dataset):
      def get_item_by_index(self, index):
         return self.__getitem__(index)
           
+
+class HDEpicVideoClsDataset(EpicVideoClsDataset):
+     def __init__(self, anno_path, data_path, mode='train', clip_len=8,
+               crop_size=224, short_side_size=256, new_height=256,
+               new_width=340, keep_aspect_ratio=True, num_segment=1,
+               num_crop=1, test_num_segment=10, test_num_crop=3, args=None, audio_path=None):
+          self.anno_path = anno_path
+          self.data_path = data_path
+          self.audio_path = args.audio_path
+          self.mode = mode
+          self.clip_len = clip_len
+          self.crop_size = crop_size
+          self.short_side_size = short_side_size
+          self.new_height = new_height
+          self.new_width = new_width
+          self.keep_aspect_ratio = keep_aspect_ratio
+          self.num_segment = num_segment
+          self.test_num_segment = test_num_segment
+          self.num_crop = num_crop
+          self.test_num_crop = test_num_crop
+          self.args = args
+          self.aug = False
+          self.rand_erase = False
+          self.disable_video = args.disable_video
+          if self.mode in ['train']:
+               self.aug = True
+               if self.args.reprob > 0:
+                    self.rand_erase = True
+          if VideoReader is None:
+               raise ImportError("Unable to import `decord` which is required to read videos.")
+          if self.audio_path is not None:
+               self.audio_extension = '.wav'
+               self.audio_type = args.audio_type
+               self.realtime_audio = args.realtime_audio
+               self.autosave_spec = args.autosave_spec
+               self.data_set = 'EPIC_split'
+               if (mode == 'train') and getattr(args, 'add_noise', None): 
+                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm, noise=True)
+               else:
+                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm)
+          
+          import pandas as pd
+          import pickle
+          cleaned = pd.read_json(self.anno_path, lines=True)
+          # remove empty main_action_classes
+          cleaned = cleaned[cleaned['main_action_classes'].apply(lambda x: len(x) > 0 and len(x[0]) == 2)].reset_index(drop=True)
+          # remove outliers
+          cleaned = cleaned[(cleaned['main_action_classes'].apply(lambda x: x[0][0] < 97 and x[0][1] < 300))].reset_index(drop=True)
+          
+          # Check if all video files exist, print missing, and remove from dataset
+          existing_samples = []
+          missing_samples = []
+          for sample_id in list(cleaned['unique_narration_id']):
+               sample_path = os.path.join(self.data_path, sample_id + '.mp4')
+               if not os.path.exists(sample_path):
+                    print(f"Missing video file: {sample_path}")
+                    missing_samples.append(sample_id)
+               else:
+                    existing_samples.append(sample_id)
+          if missing_samples:
+               print(f"Total missing videos: {len(missing_samples)} / {len(cleaned)}")
+          cleaned = cleaned[cleaned['unique_narration_id'].isin(existing_samples)].reset_index(drop=True)
+          # if self.mode == 'train':
+          #      self.dataset_samples = list(cleaned.values[:, 0])[:101]
+          # else:
+          self.dataset_samples = list(cleaned['unique_narration_id'])
+          verb_label_array = [item[0][0] for item in cleaned['main_action_classes']] # verb_idx
+          noun_label_array = [item[0][1] for item in cleaned['main_action_classes']] # noun_idx
+          action_label_array = [item[0][0]*300+item[0][1] for item in cleaned['main_action_classes']] # action
+          if self.audio_path is not None:
+               fps = 30
+               self.audio_samples = {
+               row.unique_narration_id: {
+                    'start_frame': int(row.start_timestamp * fps),
+                    'stop_frame': int(row.end_timestamp * fps)
+               }
+               for _, row in cleaned.iterrows()
+               }
+          self.narration_array = None
+          self.label_array = np.stack((noun_label_array, verb_label_array, action_label_array), axis=1) # label [noun, verb] sequence
+          
+          if  (mode == 'train'):
+               pass
+          
+          elif (mode == 'validation'):
+               self.data_transform = video_transforms.Compose([
+                    video_transforms.Resize(self.short_side_size, interpolation='bilinear'),
+                    video_transforms.CenterCrop(size=(self.crop_size, self.crop_size)),
+                    volume_transforms.ClipToTensor(),
+                    video_transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+               ])
+          elif (mode == 'test'):
+               self.data_resize = video_transforms.Compose([
+                    video_transforms.Resize(size=(short_side_size), interpolation='bilinear')
+               ])
+               self.data_transform = video_transforms.Compose([
+                    volume_transforms.ClipToTensor(),
+                    video_transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+               ])
+               self.test_seg = []
+               self.test_dataset = []
+               self.test_label_array = []
+               for ck in range(self.test_num_segment):
+                    for cp in range(self.test_num_crop):
+                         for idx in range(len(self.label_array)):
+                              sample_label = self.label_array[idx]
+                              self.test_label_array.append(sample_label)
+                              self.test_dataset.append(self.dataset_samples[idx])
+                              self.test_seg.append((ck, cp))
+
+
 
 def spatial_sampling(
     frames,

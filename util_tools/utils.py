@@ -379,22 +379,32 @@ def load_bidir_weights(model, args, freeze_list=None):
         checkpoint_model = checkpoint
     state_dict = model.state_dict()
     for k in ['head.weight', 'head.bias']:
-        if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-            print(f"Removing key {k} from pretrained checkpoint")
-            del checkpoint_model[k]
+        if k in checkpoint_model:
+            if getattr(args, 'videomae_v2', False) or checkpoint_model[k].shape != state_dict[k].shape:
+                print(f"Removing key {k} from pretrained checkpoint")
+                del checkpoint_model[k]
 
     all_keys = list(checkpoint_model.keys())
     clip_all_keys = list(checkpoint_clip.keys())
     new_dict = OrderedDict()
-    for key in all_keys:
-        if key.startswith('backbone.'):
-            new_dict[key[9:]] = checkpoint_model[key]
-        elif key.startswith('encoder.norm.'):
-            new_dict[key.replace('encoder.', 'vmae_fc_')] = checkpoint_model[key]
-        elif key.startswith('encoder.'):
-            new_dict[key[8:]] = checkpoint_model[key]
-        else:
-            new_dict[key] = checkpoint_model[key]
+    if getattr(args, 'videomae_v2', False):
+        for key in all_keys:
+            if key.startswith('backbone.'):
+                new_dict[key[9:]] = checkpoint_model[key]
+            elif key.startswith('fc_norm.'):
+                new_dict[key.replace('fc_norm', 'vmae_fc_norm')] = checkpoint_model[key]
+            else:
+                new_dict[key] = checkpoint_model[key]
+    else:
+        for key in all_keys:
+            if key.startswith('backbone.'):
+                new_dict[key[9:]] = checkpoint_model[key]
+            elif key.startswith('encoder.norm.'):
+                new_dict[key.replace('encoder.', 'vmae_fc_')] = checkpoint_model[key]
+            elif key.startswith('encoder.'):
+                new_dict[key[8:]] = checkpoint_model[key]
+            else:
+                new_dict[key] = checkpoint_model[key]
     
     # add new code for load clip weight <blocks load, for Video Encoder>
     for key in clip_all_keys:
@@ -737,6 +747,34 @@ def laod_eval_weights(model, pre_trained_weight, args):
             pos_tokens = pos_tokens.flatten(1, 3) # B, L, C
             new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
             checkpoint_model['pos_embed'] = new_pos_embed
+            
+    model_state_dict = model.state_dict()
+    for key in list(checkpoint_model.keys()):
+        # Check for the temporal positional embedding parameters in CrossAttentionT2S
+        if 't2s_cross.clip_time_pos' in key or 't2s_cross.vmae_time_pos' in key:
+            param_checkpoint = checkpoint_model[key]
+            param_model = model_state_dict[key]
+
+            # If the temporal length is different, perform interpolation
+            if param_checkpoint.shape[0] != param_model.shape[0]:
+                
+                # Reshape for 1D interpolation: (L, C) -> (B, C, L)
+                param_to_interp = param_checkpoint.unsqueeze(0).transpose(1, 2)
+                
+                # Perform linear interpolation
+                interpolated_param = F.interpolate(
+                    param_to_interp,
+                    size=param_model.shape[0],  # Target temporal length
+                    mode='linear',
+                    align_corners=False
+                )
+                
+                # Reshape back: (B, C, L) -> (L, C)
+                final_param = interpolated_param.transpose(1, 2).squeeze(0)
+                
+                # Update the parameter in the checkpoint dictionary
+                checkpoint_model[key] = final_param
+        
             
     load_state_dict(model, checkpoint_model, prefix=args.model_prefix)
             

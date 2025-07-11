@@ -417,7 +417,7 @@ class ActivityNetDataset(Dataset):
         # handle temporal segments
         average_duration = video_length // self.num_segment
         all_index = []
-        sampling_type='dense'
+        # sampling_type='dense'
         if sampling_type == 'uniform':
             if average_duration > 0:
                 all_index += list(start_frame + np.multiply(list(range(self.num_segment)), average_duration) + np.random.randint(average_duration, size=self.num_segment))
@@ -432,10 +432,10 @@ class ActivityNetDataset(Dataset):
             seg_len = video_length // num_segment
             for i in range(num_segment):
                 if seg_len <= converted_len:
-                    index = np.linspace(0, seg_len-1, num=clip_len).astype(np.int64)
-                    # index = np.linspace(0, seg_len, num=seg_len // self.frame_sample_rate)
-                    # index = np.concatenate((index, np.ones(clip_len - seg_len // self.frame_sample_rate) * seg_len))
-                    # index = np.clip(index, 0, seg_len - 1).astype(np.int64)
+                    # index = np.linspace(0, seg_len-1, num=clip_len).astype(np.int64)
+                    index = np.linspace(0, seg_len, num=seg_len // self.frame_sample_rate)
+                    index = np.concatenate((index, np.ones(clip_len - seg_len // self.frame_sample_rate) * seg_len))
+                    index = np.clip(index, 0, seg_len - 1).astype(np.int64)
                 else:
                     end_idx = np.random.randint(converted_len, seg_len)
                     str_idx = end_idx - converted_len

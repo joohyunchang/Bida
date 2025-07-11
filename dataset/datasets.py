@@ -9,7 +9,7 @@ from .vggsound import VGGSoundVidAudClsDataset
 from .ssv2 import SSVideoClsDataset
 from .epic import EpicVideoClsDataset, HDEpicVideoClsDataset
 from .epic_ov import EpicOVVideoClsDataset
-from .epic_sounds import EpicSoundsVideoClsDataset
+from .epic_sounds import EpicSoundsVideoClsDataset, HDEpicSoundsClsDataset
 from .epic_dense import EpicDenseVideoClsDataset
 from .diving import DivingVideoClsDataset
 from .activitynet import ActivityNetDataset
@@ -355,6 +355,37 @@ def build_dataset(is_train, test_mode, args):
             anno_path = os.path.join(args.anno_path, 'EPIC_Sounds_validation.csv')
 
         dataset = EpicSoundsVideoClsDataset(
+            anno_path=anno_path,
+            data_path=args.data_path,
+            mode=mode,
+            clip_len=1,
+            num_segment=args.num_frames,
+            test_num_segment=args.test_num_segment,
+            test_num_crop=args.test_num_crop,
+            num_crop=1 if not test_mode else 3,
+            keep_aspect_ratio=True,
+            crop_size=args.input_size,
+            short_side_size=args.short_side_size,
+            new_height=256,
+            new_width=320,
+            args=args,
+            audio_path=args.audio_path)
+        nb_classes = 44
+        
+    elif args.data_set == 'HD-EPIC-sounds':
+        mode = None
+        anno_path = None
+        if is_train is True:
+            mode = 'train'
+            anno_path = os.path.join(args.anno_path, 'HD_EPIC_Sounds.csv')
+        elif test_mode is True:
+            mode = 'test'
+            anno_path = os.path.join(args.anno_path, 'HD_EPIC_Sounds.csv')
+        else:
+            mode = 'validation'
+            anno_path = os.path.join(args.anno_path, 'HD_EPIC_Sounds.csv')
+
+        dataset = HDEpicSoundsClsDataset(
             anno_path=anno_path,
             data_path=args.data_path,
             mode=mode,

@@ -226,7 +226,7 @@ def text_prompt(dataset='HMDB51', data_path = None ,clipbackbone='ViT-B/16', dev
         
         return [actionlist, actiondict, actiontoken]
     
-    elif dataset == 'EPIC_sounds':
+    elif dataset in ['EPIC_sounds','HD_EPIC_sounds']:
         actionlist = ['metal-only collision', 'scrub / scrape / scour / wipe', 'cut / chop', 'open / close', 'rustle','water',
                       'plastic-only collision', 'footstep', 'stir / mix / whisk', 'slide object', 'metal / wood collision',
                       'metal / plastic collision', 'metal / ceramic collision', 'background', 'ceramic-only collision', 'beep',
@@ -419,7 +419,7 @@ def dataset_class(dataset='HMDB51', data_path = None):
         
         return {'action':actionlist}
     
-    elif dataset == 'EPIC_sounds':
+    elif dataset in ['EPIC_sounds','HD-EPIC-sounds']:
         actionlist = ['metal-only collision', 'scrub / scrape / scour / wipe', 'cut / chop', 'open / close', 'rustle','water',
                       'plastic-only collision', 'footstep', 'stir / mix / whisk', 'slide object', 'metal / wood collision',
                       'metal / plastic collision', 'metal / ceramic collision', 'background', 'ceramic-only collision', 'beep',

@@ -173,7 +173,7 @@ def get_args():
     parser.add_argument('--num_segments', type=int, default= 1)
     parser.add_argument('--num_frames', type=int, default= 16)
     parser.add_argument('--sampling_rate', type=int, default= 4)
-    parser.add_argument('--data_set', default='Kinetics-400', choices=['ActivityNet','HD_EPIC','EPIC_dense','diving-48','Kinetics-400', 'SSV2','MINI_SSV2', 'UCF101', 'HMDB51','image_folder', 'EPIC','Kinetics_sound', 'EPIC_sounds','VGGSound'],
+    parser.add_argument('--data_set', default='Kinetics-400', choices=['ActivityNet','HD_EPIC','HD-EPIC-sounds','EPIC_dense','diving-48','Kinetics-400', 'SSV2','MINI_SSV2', 'UCF101', 'HMDB51','image_folder', 'EPIC','Kinetics_sound', 'EPIC_sounds','VGGSound'],
                         type=str, help='dataset')
     parser.add_argument('--pred_type', default=None, choices=['noun', 'verb', 'action'])
     parser.add_argument('--output_dir', default='',

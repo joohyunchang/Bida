@@ -45,6 +45,7 @@ class EpicSoundsVideoClsDataset(Dataset):
           if VideoReader is None:
                raise ImportError("Unable to import `decord` which is required to read videos.")
           if self.audio_path is not None:
+               self.audio_extension = '.wav'
                self.audio_type = args.audio_type
                self.data_set = args.data_set
                self.realtime_audio = args.realtime_audio
@@ -62,7 +63,6 @@ class EpicSoundsVideoClsDataset(Dataset):
                cleaned = cleaned[:200]
           self.dataset_samples = list(cleaned.values[:, 0])
           self.label_array = list(cleaned.values[:, 9]) # action
-          self.audio_samples = {cleaned.iloc[i, 0]: cleaned.iloc[i, 12:14] for i in range(len(cleaned))}
           self.narration_array = None
           
           if  (mode == 'train'):
@@ -115,7 +115,7 @@ class EpicSoundsVideoClsDataset(Dataset):
                          if args.spec_augment:
                               spec = self.spectrogram.spec_augment(spec)
                     else:
-                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + '.wav')
+                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + self.audio_extension)
                          try:
                               spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=random.random(), audio_type=self.audio_type, data_set=self.data_set, mode=self.mode, return_index=True)
                               if not self.realtime_audio and self.autosave_spec:
@@ -175,7 +175,7 @@ class EpicSoundsVideoClsDataset(Dataset):
                     if os.path.exists(audio_trim_path) and not self.realtime_audio:
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
-                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + '.wav')
+                         audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + self.audio_extension)
                          spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, data_set=self.data_set, return_index=True)
                          if not self.realtime_audio and self.autosave_spec:
                               try:
@@ -213,7 +213,7 @@ class EpicSoundsVideoClsDataset(Dataset):
                     if os.path.exists(audio_trim_path) and not self.realtime_audio:
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
-                         audio_sample = os.path.join(self.audio_path, self.test_dataset[index] + '.wav')
+                         audio_sample = os.path.join(self.audio_path, self.test_dataset[index] + self.audio_extension)
                          # (2*chunk_nb+1)/(self.test_num_segment * 2)
                          spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set, return_index=True, add_something=getattr(self.args,'ablation_eval',None))
                else:
@@ -382,7 +382,88 @@ class EpicSoundsVideoClsDataset(Dataset):
           
      def get_item_by_index(self, index):
         return self.__getitem__(index)
+
+class HDEpicSoundsClsDataset(EpicSoundsVideoClsDataset):                        
+     def __init__(self, anno_path, data_path, mode='train', clip_len=8,
+               crop_size=224, short_side_size=256, new_height=256,
+               new_width=340, keep_aspect_ratio=True, num_segment=1,
+               num_crop=1, test_num_segment=10, test_num_crop=3, args=None, audio_path=None):
+          self.anno_path = anno_path
+          self.data_path = data_path
+          self.audio_path = args.audio_path
+          self.mode = mode
+          self.clip_len = clip_len
+          self.crop_size = crop_size
+          self.short_side_size = short_side_size
+          self.new_height = new_height
+          self.new_width = new_width
+          self.keep_aspect_ratio = keep_aspect_ratio
+          self.num_segment = num_segment
+          self.test_num_segment = test_num_segment
+          self.num_crop = num_crop
+          self.test_num_crop = test_num_crop
+          self.args = args
+          self.aug = False
+          self.rand_erase = False
+          self.disable_video = args.disable_video
+          if self.mode in ['train']:
+               self.aug = True
+               if self.args.reprob > 0:
+                    self.rand_erase = True
+          if VideoReader is None:
+               raise ImportError("Unable to import `decord` which is required to read videos.")
+          if self.audio_path is not None:
+               self.audio_extension = '.mp4'
+               self.audio_type = args.audio_type
+               self.data_set = args.data_set
+               self.realtime_audio = args.realtime_audio
+               self.autosave_spec = args.autosave_spec
+               if (mode == 'train') and getattr(args, 'add_noise', None): 
+                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm, noise=True)
+               else:
+                    self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm)
+               
+          import pandas as pd
+          import pickle
+          cleaned = pd.read_csv(self.anno_path)
+          cleaned['mp4_name'] = cleaned['video_id'].astype(str) + '-' + cleaned['start_sample'].astype(str) + '-' + cleaned['stop_sample'].astype(str)
+          if getattr(args, 'debug', False):
+               cleaned = cleaned[:200]
+          self.dataset_samples = list(cleaned['mp4_name'])
+          self.label_array = list(cleaned['class_id']) # action
+          self.narration_array = None
           
+          if  (mode == 'train'):
+               pass
+          
+          elif (mode == 'validation'):
+               self.data_transform = video_transforms.Compose([
+                    video_transforms.Resize(self.short_side_size, interpolation='bilinear'),
+                    video_transforms.CenterCrop(size=(self.crop_size, self.crop_size)),
+                    volume_transforms.ClipToTensor(),
+                    video_transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+               ])
+          elif (mode == 'test'):
+               self.data_resize = video_transforms.Compose([
+                    video_transforms.Resize(size=(short_side_size), interpolation='bilinear')
+               ])
+               self.data_transform = video_transforms.Compose([
+                    volume_transforms.ClipToTensor(),
+                    video_transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+               ])
+               self.test_seg = []
+               self.test_dataset = []
+               self.test_label_array = []
+               for ck in range(self.test_num_segment):
+                    for cp in range(self.test_num_crop):
+                         for idx in range(len(self.label_array)):
+                              sample_label = self.label_array[idx]
+                              self.test_label_array.append(sample_label)
+                              self.test_dataset.append(self.dataset_samples[idx])
+                              self.test_seg.append((ck, cp))
+
 
 def spatial_sampling(
     frames,

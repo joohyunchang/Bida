@@ -281,14 +281,28 @@ class ActivityNetDataset(Dataset):
             else:
                 spatial_step = 1.0 * (max( buffer.shape[1], buffer.shape[2]) - self.short_side_size) \
                                     / (self.test_num_crop - 1)
-            temporal_start = chunk_nb # 0/1
-            all_idx = all_idx[temporal_start::2]
-            spatial_start = int(split_nb * spatial_step)
-            if buffer.shape[1] >= buffer.shape[2]:
-                buffer = buffer[temporal_start::2, \
+            sampling_type='sparse'
+            if sampling_type == 'sparse':
+                temporal_start = chunk_nb # 0/1
+                all_idx = all_idx[temporal_start::self.test_num_segment]
+                spatial_start = int(split_nb * spatial_step)
+                if buffer.shape[1] >= buffer.shape[2]:
+                    buffer = buffer[temporal_start::self.test_num_segment, \
                         spatial_start:spatial_start + self.short_side_size, :, :]
-            else:
-                buffer = buffer[temporal_start::2, \
+                else:
+                    buffer = buffer[temporal_start::self.test_num_segment, \
+                        :, spatial_start:spatial_start + self.short_side_size, :]
+            elif sampling_type == 'dense':
+                temporal_step = max(1.0 * (buffer.shape[0] - self.num_segment) \
+                            / (self.test_num_segment - 1), 0)
+                temporal_start = int(chunk_nb * temporal_step)
+                all_idx = all_idx[temporal_start:temporal_start + self.num_segment]
+                spatial_start = int(split_nb * spatial_step)
+                if buffer.shape[1] >= buffer.shape[2]:
+                    buffer = buffer[temporal_start:temporal_start + self.num_segment, \
+                        spatial_start:spatial_start + self.short_side_size, :, :]
+                else:
+                    buffer = buffer[temporal_start:temporal_start + self.num_segment, \
                         :, spatial_start:spatial_start + self.short_side_size, :]
 
             buffer = self.data_transform(buffer)

@@ -151,7 +151,8 @@ class EpicVideoClsDataset(Dataset):
                     while len(buffer) == 0:
                          warnings.warn("video {} not correctly loaded during training".format(sample))
                          index = np.random.randint(self.__len__())
-                         sample = self.dataset_samples[index]
+                         sample = self.dataset_samples[index] + '.mp4'
+                         sample = os.path.join(self.data_path, sample)
                          buffer, all_idx = self.loadvideo_decord(sample, sample_rate_scale=scale_t, return_index=True)
                          
                if args.num_sample > 1:
@@ -206,7 +207,8 @@ class EpicVideoClsDataset(Dataset):
                     while len(buffer) == 0:
                          warnings.warn("video {} not correctly loaded during validation".format(sample))
                          index = np.random.randint(self.__len__())
-                         sample = self.dataset_samples[index]
+                         sample = self.dataset_samples[index] + '.mp4'
+                         sample = os.path.join(self.data_path, sample)
                          buffer, all_idx = self.loadvideo_decord(sample, return_index=True)
                buffer = self.data_transform(buffer)
                all_idx = np.concatenate((idx, all_idx))
@@ -265,15 +267,29 @@ class EpicVideoClsDataset(Dataset):
                else:
                     spatial_step = 1.0 * (max( buffer.shape[1], buffer.shape[2]) - self.short_side_size) \
                                         / (self.test_num_crop - 1)
-               temporal_start = chunk_nb # 0/1
-               all_idx = all_idx[temporal_start::2]
-               spatial_start = int(split_nb * spatial_step)
-               if buffer.shape[1] >= buffer.shape[2]:
-                    buffer = buffer[temporal_start::2, \
-                         spatial_start:spatial_start + self.short_side_size, :, :]
-               else:
-                    buffer = buffer[temporal_start::2, \
-                         :, spatial_start:spatial_start + self.short_side_size, :]
+               sampling_type='sparse'
+               if sampling_type == 'sparse':
+                    temporal_start = chunk_nb # 0/1
+                    all_idx = all_idx[temporal_start::self.test_num_segment]
+                    spatial_start = int(split_nb * spatial_step)
+                    if buffer.shape[1] >= buffer.shape[2]:
+                         buffer = buffer[temporal_start::self.test_num_segment, \
+                              spatial_start:spatial_start + self.short_side_size, :, :]
+                    else:
+                         buffer = buffer[temporal_start::self.test_num_segment, \
+                              :, spatial_start:spatial_start + self.short_side_size, :]
+               elif sampling_type == 'dense':
+                    temporal_step = max(1.0 * (buffer.shape[0] - self.num_segment) \
+                                / (self.test_num_segment - 1), 0)
+                    temporal_start = int(chunk_nb * temporal_step)
+                    all_idx = all_idx[temporal_start:temporal_start + self.num_segment]
+                    spatial_start = int(split_nb * spatial_step)
+                    if buffer.shape[1] >= buffer.shape[2]:
+                         buffer = buffer[temporal_start:temporal_start + self.num_segment, \
+                              spatial_start:spatial_start + self.short_side_size, :, :]
+                    else:
+                         buffer = buffer[temporal_start:temporal_start + self.num_segment, \
+                              :, spatial_start:spatial_start + self.short_side_size, :]
 
                buffer = self.data_transform(buffer)
                all_idx = np.concatenate((idx, all_idx))

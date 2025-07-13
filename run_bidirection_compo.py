@@ -38,6 +38,7 @@ import models.ast_clip_cast
 import models.ast_vmae_cast
 import models.beats_clip_cast
 import models.beats_Bsquare
+import models.cnn_vmae
 from models.prompt import text_prompt, dataset_class
 import pandas as pd
 from timm.models.registry import register_model

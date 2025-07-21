@@ -42,6 +42,7 @@ class VGGSoundVidAudClsDataset(Dataset):
         self.aug = False
         self.rand_erase = False
         self.disable_video = args.disable_video
+        self.sampling_type='dense'
         if self.mode in ['train']:
             self.aug = True
             if self.args.reprob > 0:
@@ -352,20 +353,33 @@ class VGGSoundVidAudClsDataset(Dataset):
         seg_len = len(vr) // self.num_segment
 
         all_index = []
-        for i in range(self.num_segment):
-            if seg_len <= converted_len:
-                index = np.linspace(0, seg_len, num=seg_len // self.frame_sample_rate)
-                index = np.concatenate((index, np.ones(self.clip_len - seg_len // self.frame_sample_rate) * seg_len))
-                index = np.clip(index, 0, seg_len - 1).astype(np.int64)
-            else:
-                end_idx = np.random.randint(converted_len, seg_len)
-                str_idx = end_idx - converted_len
-                index = np.linspace(str_idx, end_idx, num=self.clip_len)
-                index = np.clip(index, str_idx, end_idx - 1).astype(np.int64)
-            index = index + i*seg_len
-            all_index.extend(list(index))
+        if self.sampling_type == 'dense':
+            for i in range(self.num_segment):
+                if seg_len <= converted_len:
+                    index = np.linspace(0, seg_len, num=seg_len // self.frame_sample_rate)
+                    index = np.concatenate((index, np.ones(self.clip_len - seg_len // self.frame_sample_rate) * seg_len))
+                    index = np.clip(index, 0, seg_len - 1).astype(np.int64)
+                else:
+                    end_idx = np.random.randint(converted_len, seg_len)
+                    str_idx = end_idx - converted_len
+                    index = np.linspace(str_idx, end_idx, num=self.clip_len)
+                    index = np.clip(index, str_idx, end_idx - 1).astype(np.int64)
+                index = index + i*seg_len
+                all_index.extend(list(index))
 
-        all_index = all_index[::int(sample_rate_scale)]
+            all_index = all_index[::int(sample_rate_scale)]
+        elif self.sampling_type == 'uniform':
+            video_length = len(vr)              # 전체 프레임 수
+            clip_len     = self.clip_len        # 가져올 샘플 수
+
+            # 0 ~ video_length-1 구간을 clip_len 等분
+            # 예: video_length=100, clip_len=8 → [ 0  14  29  43  57  71  86  99 ]
+            uniform_idx = (
+                np.linspace(0, video_length - 1, num=clip_len, dtype=np.int64)
+                .tolist()
+            )
+
+            all_index += uniform_idx
         vr.seek(0)
         buffer = vr.get_batch(all_index).asnumpy()
         if return_index:

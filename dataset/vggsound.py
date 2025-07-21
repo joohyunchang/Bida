@@ -51,6 +51,7 @@ class VGGSoundVidAudClsDataset(Dataset):
         if self.audio_path is not None:
             self.audio_type = args.audio_type
             self.realtime_audio = args.realtime_audio
+            self.add_something = getattr(self.args,'ablation_eval',None)
             # if args.audio_height != 224 or args.audio_width != 224:
             #     self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=1024)
             # else:
@@ -169,7 +170,7 @@ class VGGSoundVidAudClsDataset(Dataset):
                     audio_id = self.dataset_samples[index]
                     audio_sample = os.path.join(self.audio_path, audio_id)
                     try:
-                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set, return_index=True)
+                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, mode=self.mode, data_set=self.data_set, return_index=True,add_something=self.add_something)
                     except Exception as e:
                         warnings.warn("audio {} not correctly loaded during validation, {}".format(audio_sample, self.dataset_samples[index]))
                         warnings.warn(e)
@@ -205,7 +206,7 @@ class VGGSoundVidAudClsDataset(Dataset):
                     audio_id = self.test_dataset[index]
                     audio_sample = os.path.join(self.audio_path, audio_id)
                     try:
-                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set, return_index=True)
+                        spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, mode=self.mode, data_set=self.data_set, return_index=True,add_something=self.add_something)
                     except Exception as e:
                         warnings.warn("audio {} not correctly loaded during testing, {}".format(audio_sample, self.dataset_samples[index]))
                         warnings.warn(e)

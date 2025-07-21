@@ -217,6 +217,7 @@ class CrossAttentionS2T(nn.Module):
         s2t_attn = (s2t_q @ s2t_k.transpose(-2, -1))
         
         s2t_attn = s2t_attn.softmax(dim=-1)
+        self.last_attn = s2t_attn
         
         t_x = (s2t_attn @ s2t_v)
         t_x = rearrange(t_x, 'b h t d -> b t (h d)')
@@ -275,7 +276,8 @@ class CrossAttentionT2S(nn.Module):
         t2s_attn = (t2s_q @ t2s_k.transpose(-2, -1))
         
         t2s_attn = t2s_attn.softmax(dim=-1)
-        
+        self.last_attn = t2s_attn
+
         s_x_pat = (t2s_attn @ t2s_v)
         s_x_pat = rearrange(s_x_pat, 'b h n d -> b n (h d)')
         s_x_pat = self.t2s_proj(s_x_pat)

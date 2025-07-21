@@ -4,6 +4,9 @@ import os
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
+from pathlib import Path
+from tqdm import tqdm
+from functools import partial
 
 def ffmpeg_extraction(input_video, output_sound, start_timestamp, stop_timestamp, sample_rate):
     ffmpeg_command = ['ffmpeg', '-loglevel', 'error', '-y', '-i', input_video, '-ss', start_timestamp, '-to', stop_timestamp, '-vn', '-acodec', 'pcm_s16le', '-ac', '1', '-ar', sample_rate, output_sound]
@@ -38,7 +41,7 @@ def process_video(anno_id, vid_id, video_id, start, stop, videos_dir, output_vid
         print(e)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__' and False:
     parser = argparse.ArgumentParser()
     parser.add_argument('step', type=int, default=0, help='Rate to resample audio')
     # parser.add_argument('videos_dir', help='Directory of EPIC videos with audio')
@@ -60,6 +63,7 @@ if __name__ == '__main__':
         videos_dir = '/data/dataset/HD-EPIC/Videos'
         audios_dir = '/data/dataset/HD-EPIC/Videos'
         output_dir = '/data/dataset/HD-EPIC/hd-epic-trimmed'
+    
     stride = 5000
     a = int(args.step)
     start_idx = a * stride
@@ -114,3 +118,98 @@ if __name__ == '__main__':
         temp_time = time.time()
         
     print('total time : ', time.time()-start_time)
+
+def process_single_file_with_video(row_tuple, source_root, destination_root):
+    """하나의 비디오 클립을 처리하는 작업자 함수"""
+    idx, row = row_tuple
+    
+    video_path = source_root / row['participant_id'] / (row['video_id'] + '.mp4')
+    
+    if not video_path.exists():
+        return f"Skipped: {video_path} not found."
+
+    # 최종 결과물은 비디오 파일(.mp4)
+    output_path = destination_root / (row['video_id'] + f'-{row['start_sample']}' + '.mp4')
+    
+    try:
+        command = [
+            'ffmpeg',
+            '-ss', str(row['start_timestamp']),
+            '-i', str(video_path),
+            '-to', str(row['stop_timestamp']),
+            '-vf', "scale='if(gte(iw,ih),-1,256)':'if(gte(iw,ih),256,-1)'",
+            '-c:v', 'libopenh264',
+            # '-preset', 'ultrafast', # 속도 우선
+            '-acodec', 'aac',       # mp4와 호환되는 오디오 코덱
+            # '-ac', '1',
+            '-ar', '24000',
+            '-y',
+            '-loglevel', 'error',
+            str(output_path)
+        ]
+        subprocess.run(command, check=True, capture_output=True)
+        return f"Processed: {output_path.name}"
+    except subprocess.CalledProcessError as e:
+        return f"Failed: {output_path.name} | Error: {e.stderr.decode()}"
+    
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('step', type=int, default=0, help='Chunk step for processing')
+    args = parser.parse_args()
+    
+    # 경로 변수를 메인 로직에서 관리
+    anno_file = Path('/data/joohyun7u/project/CAST/dataset/hd_epic_audio_sounds/HD_EPIC_Sounds.csv')
+    SOURCE_PATH = Path("/data/dataset/HD-EPIC/Videos")
+    DESTINATION_PATH = Path("/data/dataset/HD-EPIC/hd-epic-sounds-trimmed") # 목적에 맞게 경로 이름 변경
+    
+    os.makedirs(DESTINATION_PATH, exist_ok=True)
+    
+    print("Loading annotation file...")
+    anno_df = pd.read_csv(anno_file)
+    
+    # # 기존에 처리된 mp4 파일명 집합 생성 (video_id+start_sample 조합)
+    # existing_mp4 = set(os.path.splitext(f)[0] for f in os.listdir(DESTINATION_PATH))
+    # anno_df['mp4_name'] = anno_df['video_id'].astype(str) + '-' + anno_df['start_sample'].astype(str)
+    # anno_df = anno_df[~anno_df['mp4_name'].isin(existing_mp4)].reset_index(drop=True)
+    
+    stride = 2600
+    start_idx = args.step * stride
+    end_idx = min((args.step + 1) * stride, len(anno_df))
+    
+    if start_idx >= len(anno_df):
+        print("Start index is out of bounds. No files to process.")
+        exit()
+        
+    print(f'Processing chunk {args.step}: from index {start_idx} to {end_idx}')
+    df_chunk = anno_df.iloc[start_idx:end_idx]
+
+    # num_workers = os.cpu_count() 
+    num_workers = 8
+    print(f"Starting parallel processing with {num_workers} workers...")
+    
+    # 🚀 functools.partial을 사용하여 함수의 일부 인자를 고정
+    # 이제 process_func는 row_tuple 하나만 인자로 받는 함수처럼 동작합니다.
+    process_func = partial(
+        process_single_file_with_video, 
+        source_root=SOURCE_PATH, 
+        destination_root=DESTINATION_PATH
+    )
+
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        tasks = list(df_chunk.iterrows())
+        results = list(tqdm(executor.map(process_func, tasks), total=len(tasks)))
+    
+    print("\nProcessing finished.")
+    
+    print("--- Checking for failed or skipped files ---")
+    failed_count = 0
+    for res in results:
+        # 반환된 메시지에 'Failed' 또는 'Skipped'가 포함되어 있으면 출력
+        if "Failed" in res or "Skipped" in res:
+            print(res)
+            failed_count += 1
+            
+    if failed_count == 0:
+        print("All files processed successfully.")
+    else:
+        print(f"\nTotal {failed_count} files failed or were skipped.")

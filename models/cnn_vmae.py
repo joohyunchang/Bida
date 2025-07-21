@@ -668,6 +668,82 @@ def compo_resnet50_vmae_base_patch16_224(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), composition=True, **kwargs)
     return model
 
+class VideoResNetWithHead(nn.Module):
+    def __init__(self, num_classes=400, feature_agg='mean', img_size=224, composition=False, init_scale=0., head_drop_rate=0.,):
+        super().__init__()
+        # load CLIP vision backbone
+        self.composition = composition
+        self.model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+        if self.composition:
+            self.model.fc = nn.Identity()
+            self.head_verb = nn.Linear(2048, 97)
+            self.head_verb_dropout = nn.Dropout(head_drop_rate)
+            self.head_noun = nn.Linear(2048, 300)
+            self.head_noun_dropout = nn.Dropout(head_drop_rate)
+            self.head_verb.weight.data.mul_(init_scale)
+            self.head_verb.bias.data.mul_(init_scale)
+            self.head_noun.weight.data.mul_(init_scale)
+            self.head_noun.bias.data.mul_(init_scale)
+        else:
+            self.model.fc = nn.Identity()
+            self.head = nn.Linear(2048, num_classes)
+            self.head.weight.data.mul_(init_scale)
+            self.head.bias.data.mul_(init_scale)
+            
+        self.feature_agg = feature_agg  # 'mean' or 'sum'
+    
+    def get_num_layers(self):
+        return len(self.model.layer1) + len(self.model.layer2) + len(self.model.layer3) + len(self.model.layer4)
+    
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {'embeddings'}
+
+    def forward(self, x, **kwargs):  # x: [B, C, T, H, W]
+        B, C, T, H, W = x.shape
+        # (1) Frame 단위로 CLIP backbone 통과 (batch concat)
+        x = x.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)  # [B*T, C, H, W]
+        outputs = self.model(x)
+        features = outputs.view(B, T, -1)  # [B, T, D]
+        # (2) 모든 frame feature를 sum/mean pooling
+        if self.feature_agg == 'mean':
+            vid_feat = features.mean(dim=1)
+        elif self.feature_agg == 'sum':
+            vid_feat = features.sum(dim=1)
+        else:
+            raise NotImplementedError
+        if self.composition:
+            s_x = self.head_noun_dropout(vid_feat)
+            s_x = self.head_noun(s_x)
+            t_x = self.head_verb_dropout(vid_feat)
+            t_x = self.head_verb(t_x)
+            return s_x, t_x
+        else:
+            out = self.head(vid_feat)  # [B, num_classes]
+            return out
+            
+
+@register_model
+def resnet50_model(pretrained=False, **kwargs):
+    print('num_classes = %s' % kwargs.get('num_classes', None))
+    model = VideoResNetWithHead(num_classes=kwargs.get('num_classes', 400), 
+                                feature_agg='mean', 
+                                img_size=kwargs.get('img_size',224), 
+                                composition=False,
+                                head_drop_rate=kwargs.get('head_drop_rate', 0.),
+                                init_scale=kwargs.get('init_scale', 0.))
+    return model
+
+@register_model
+def compo_resnet50_model(pretrained=False, **kwargs):
+    print('num_classes = %s' % kwargs.get('num_classes', None))
+    model = VideoResNetWithHead(num_classes=kwargs.get('num_classes', 400), 
+                                feature_agg='mean', 
+                                img_size=kwargs.get('img_size',224), 
+                                composition=True,
+                                head_drop_rate=kwargs.get('head_drop_rate', 0.),
+                                init_scale=kwargs.get('init_scale', 0.))
+    return model
 
 if __name__== '__main__':
     import time
@@ -688,7 +764,8 @@ if __name__== '__main__':
     
     
     # model = internvideo2_1B_patch14_224(num_classes=400).cuda().half()
-    model = resnet50_vmae_base_patch16_224(num_classes=400).cuda().half()
+    # model = resnet50_vmae_base_patch16_224(num_classes=400).cuda().half()
+    model = resnet50_model(num_classes=400).cuda().half()
     model.eval()
     print(model)
 

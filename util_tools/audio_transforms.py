@@ -309,7 +309,8 @@ class Spectrogram:
             # (2) 구간 mute – 길이의 20~50%를 0으로
             length = samples.shape[-1]
             # seg_len = int(length * np.random.uniform(0.3, 0.7))
-            seg_len = int(length * 0.15)
+            seg_len = int(length * 0.2)
+            print("Missing On 0.2")
             start = np.random.randint(0, length - seg_len)
             samples[start:start + seg_len] = 0
             pass

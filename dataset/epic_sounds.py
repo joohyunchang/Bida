@@ -50,6 +50,7 @@ class EpicSoundsVideoClsDataset(Dataset):
                self.data_set = args.data_set
                self.realtime_audio = args.realtime_audio
                self.autosave_spec = args.autosave_spec
+               self.add_something = getattr(self.args,'ablation_eval',None)
                if (mode == 'train') and getattr(args, 'add_noise', None): 
                     self.spectrogram = Spectrogram(num_segment, args.audio_height, args.audio_width, n_fft=2048, process_type=args.process_type, noisereduce=args.noisereduce, specnorm=args.specnorm, noise=True)
                else:
@@ -176,7 +177,7 @@ class EpicSoundsVideoClsDataset(Dataset):
                          spec = self.spectrogram.loadaudiofromfile(audio_trim_path, self.audio_type)
                     else:
                          audio_sample = os.path.join(self.audio_path, self.dataset_samples[index] + self.audio_extension)
-                         spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, data_set=self.data_set, return_index=True)
+                         spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_type=self.audio_type, data_set=self.data_set, return_index=True, add_something=self.add_something)
                          if not self.realtime_audio and self.autosave_spec:
                               try:
                                    save_spec = spec[0]
@@ -215,7 +216,7 @@ class EpicSoundsVideoClsDataset(Dataset):
                     else:
                          audio_sample = os.path.join(self.audio_path, self.test_dataset[index] + self.audio_extension)
                          # (2*chunk_nb+1)/(self.test_num_segment * 2)
-                         spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set, return_index=True, add_something=getattr(self.args,'ablation_eval',None))
+                         spec, idx = self.spectrogram.loadaudio(audio_sample, 0, 0, audio_centra=(self.test_num_crop*chunk_nb+split_nb+3)/(self.test_num_segment * self.test_num_crop+6), audio_type=self.audio_type, data_set=self.data_set, return_index=True, add_something=self.add_something)
                else:
                     spec = {}
                

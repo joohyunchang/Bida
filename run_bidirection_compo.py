@@ -266,6 +266,7 @@ def get_args():
     parser.add_argument('--ablation_eval', default=None, choices=['white_noise','pink_noise','missing','time_shift','msa_add'],
                         type=str, help='ablation_eval')
     parser.add_argument('--disable_load_weights', action='store_true', default=False)
+    parser.add_argument('--mask_audio_token', type=float, default=0)
     
     class VideoCLIPWithHead(nn.Module):
         def __init__(self, num_classes=400, feature_agg='mean'):
@@ -528,6 +529,8 @@ def main(args, ds_init):
         model_args['split_time_mlp'] = args.split_time_mlp
     if args.bcast_share == True:
         model_args['bcast_share'] = args.bcast_share
+    if args.mask_audio_token > 0:
+        model_args['mask_audio_token'] = args.mask_audio_token
         
     model = create_model(**model_args)
     before_n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -555,7 +558,7 @@ def main(args, ds_init):
     #     model.load_state_dict(audio_key, strict=False)
         
     ###### VMAE 검증을 위해 freeze는 잠시 꺼둔다 #############
-    if getattr(args,'vmae_model', False) in ['videomae_v1_model', 'clip_model']:
+    if getattr(args,'vmae_model', False) in ['videomae_v1_model', 'clip_model', 'compo_resnet50_model', 'resnet50_model']:
         for param in model.parameters():
             param.requires_grad = True
     elif args.unfreeze_layers is not None:

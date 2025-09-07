@@ -1,6 +1,3 @@
-# CA^2ST: Cross-Attention in Audio, Space, and Time for Holistic Video Recognition [[Arxiv](https://arxiv.org/abs/2503.23447)]
-
-![CAST Framework](figs/CA2ST.png)
 
 
 ![GitHub last commit](https://img.shields.io/github/last-commit/joohyun7u/CA2ST)<br>
